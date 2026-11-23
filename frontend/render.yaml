@@ -1,0 +1,9 @@
+services:
+  - type: static
+    name: gold-silver-dashboard
+    plan: free
+    buildCommand: npm install && npm run build
+    staticDirectory: dist
+    envVars:
+      - key: VITE_API_BASE
+        value: https://goldsilver.onrender.com/api

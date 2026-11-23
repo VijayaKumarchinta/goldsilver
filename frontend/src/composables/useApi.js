@@ -5,7 +5,7 @@ const isLocal = window.location.hostname === 'localhost' || window.location.host
 const isVite = isLocal && (window.location.port === '5174' || window.location.port === '4173' || window.location.port === '5173')
 const API_BASE = isLocal && isVite
   ? '/api'
-  : 'http://localhost:5000/api'
+  : window.VITE_API_BASE || 'https://goldsilver.onrender.com/api'
 
 export const api = axios.create({
   baseURL: API_BASE,
