@@ -1,4 +1,5 @@
 import logging
+import os
 from flask import Flask
 from flask_cors import CORS
 from flask_socketio import SocketIO
@@ -36,6 +37,17 @@ def create_app(start_sched: bool = True):
     app.register_blueprint(health_bp, url_prefix="/api/health")
     app.register_blueprint(prices_bp, url_prefix="/api/prices")
     app.register_blueprint(logs_bp, url_prefix="/api/logs")
+
+    # Serve the Vue frontend static files at the root URL
+    app.config["STATIC_FOLDER"] = os.path.join(os.path.dirname(__file__), "..", "static")
+    @app.route("/")
+    @app.route("/<path:filename>")
+    def serve_frontend(filename="index.html"):
+        from flask import send_from_directory
+        static_dir = app.config["STATIC_FOLDER"]
+        if filename == "index.html" or not filename:
+            return send_from_directory(static_dir, "index.html")
+        return send_from_directory(static_dir, filename)
 
     # Initialize DB tables on first connection, then ensure the Telegram destination exists
     from app.repositories.destinations import ensure_telegram_destination
