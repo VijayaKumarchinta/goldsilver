@@ -37,7 +37,8 @@ def create_app(start_sched: bool = True):
     app.register_blueprint(prices_bp, url_prefix="/api/prices")
     app.register_blueprint(logs_bp, url_prefix="/api/logs")
 
-    # Ensure the Telegram destination exists from TELEGRAM_CHAT_ID
+    # Initialize DB tables on first connection, then ensure the Telegram destination exists
+    from app.repositories.destinations import ensure_telegram_destination
     ensure_telegram_destination()
 
     # Real-time price push
