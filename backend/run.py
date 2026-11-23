@@ -11,7 +11,7 @@ if __name__ == "__main__":
         import socketio as socketio_server
         from wsgiref.simple_server import make_server
         port = int(os.environ.get("PORT", 5000))
-        wsgi_app = socketio_server.WSGIApp(app, socketio)
+        wsgi_app = socketio_server.WSGIApp(socketio, app)  # (socketio_instance, flask_app)
         with make_server("0.0.0.0", port, wsgi_app) as httpd:
             print(f"Listening on 0.0.0.0:{port}")
             httpd.serve_forever()
