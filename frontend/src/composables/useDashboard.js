@@ -80,11 +80,9 @@ export function useDashboard() {
     const html = document.documentElement
     const current = html.getAttribute('data-theme')
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    if (current === 'light' || (!current && !prefersDark)) {
-      html.setAttribute('data-theme', 'dark')
-    } else {
-      html.setAttribute('data-theme', 'light')
-    }
+    const next = (current === 'light' || (!current && !prefersDark)) ? 'dark' : 'light'
+    html.setAttribute('data-theme', next)
+    try { localStorage.setItem('theme', next) } catch(e) {}
   }
 
   function getTheme() {

@@ -10,19 +10,19 @@ const props = defineProps({
 
 const emit = defineEmits(['toggle-theme'])
 
-function getTheme() {
-  return document.documentElement.getAttribute('data-theme') ||
-    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-}
-
-const isDark = ref(getTheme() === 'dark')
+const isDark = ref(
+  document.documentElement.getAttribute('data-theme') === 'dark'
+)
 
 const chipText = computed(() => props.feedStatus)
 const chipDot = computed(() => props.connected ? 'green' : 'amber')
 
 function toggleTheme() {
   emit('toggle-theme')
-  isDark.value = !isDark.value
+  // Sync after parent updates the DOM attribute
+  requestAnimationFrame(() => {
+    isDark.value = document.documentElement.getAttribute('data-theme') === 'dark'
+  })
 }
 </script>
 

@@ -47,7 +47,7 @@
 
 html, body, #app { min-height: 100%; }
 
-body {
+[data-theme] body {
   margin: 0;
   font-family: var(--font-sans);
   background: var(--bg);
