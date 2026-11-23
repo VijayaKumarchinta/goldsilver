@@ -4,7 +4,7 @@ services:
     env: python
     plan: free
     buildCommand: cd backend && pip install -r requirements.txt
-    startCommand: python run.py
+    startCommand: cd backend && python run.py
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -14,12 +14,14 @@ services:
         generateValue: true
       - key: FLASK_ENV
         value: production
+      - key: RENDER
+        value: "1"
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_CHAT_ID
         sync: false
-    healthCheckPath: /api/health
-    healthCheckTimeout: 300
+    healthCheckPath: /api/prices/health
+    healthCheckTimeout: 600
 
 databases:
   - name: gold-silver-db
