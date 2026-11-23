@@ -1,4 +1,5 @@
 from decimal import Decimal
+from datetime import datetime, timezone
 from psycopg2.extras import RealDictCursor
 from app.extensions import get_db
 
@@ -7,15 +8,25 @@ def save_snapshot(snapshot: dict, event_type: str) -> int:
     try:
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
+        # Round captured_at to the nearest minute so repeated runs in the same
+        # minute don't hit the UNIQUE(event_type, captured_at) constraint.
+        captured_at = snapshot["captured_at"]
+        if isinstance(captured_at, str):
+            captured_at = datetime.fromisoformat(captured_at.replace("Z", "+00:00"))
+        captured_at = captured_at.replace(second=0, microsecond=0).astimezone(timezone.utc)
+
         cur.execute(
             """
             INSERT INTO price_snapshots (event_type, captured_at, base_currency, output_currency)
             VALUES (%s, %s, %s, %s)
+            ON CONFLICT (event_type, captured_at) DO UPDATE SET
+                base_currency = EXCLUDED.base_currency,
+                output_currency = EXCLUDED.output_currency
             RETURNING id
             """,
             (
                 event_type,
-                snapshot["captured_at"],
+                captured_at,
                 snapshot["base_currency"],
                 snapshot["output_currency"],
             ),
@@ -28,6 +39,11 @@ def save_snapshot(snapshot: dict, event_type: str) -> int:
                 INSERT INTO metal_prices
                     (snapshot_id, symbol, usd_per_oz, inr_per_gram, provider, provider_updated_at)
                 VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (snapshot_id, symbol) DO UPDATE SET
+                    usd_per_oz = EXCLUDED.usd_per_oz,
+                    inr_per_gram = EXCLUDED.inr_per_gram,
+                    provider = EXCLUDED.provider,
+                    provider_updated_at = EXCLUDED.provider_updated_at
                 """,
                 (
                     snapshot_id,

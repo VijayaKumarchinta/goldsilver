@@ -18,7 +18,7 @@ def start_scheduler():
     jobs = [
         (
             "market_capture",
-            IntervalTrigger(minutes=15, timezone="UTC"),
+            IntervalTrigger(minutes=5, timezone="UTC"),
             scheduled_capture,
             ["market_capture"],
         ),

@@ -29,7 +29,7 @@ function toggleTheme() {
 <template>
   <header class="header">
     <div class="header-inner">
-      <a href="#" class="brand" aria-label="Bullion Desk India home">
+      <a href="#" class="brand" aria-label="Gold and Silver Prices India home">
         <span class="brand-mark">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="9"/>
@@ -37,8 +37,8 @@ function toggleTheme() {
           </svg>
         </span>
         <span class="brand-text">
-          Bullion Desk
-          <small>India</small>
+          Gold & Silver Prices
+          <small>India Market Monitor</small>
         </span>
       </a>
 
