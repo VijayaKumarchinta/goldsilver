@@ -63,7 +63,7 @@ function formatTime(iso) {
     <div class="panel-header">
       <h2 id="notification-log-heading">Recent sends</h2>
       <span class="panel-sub">
-        {{ logs.length }} send{{ logs.length !== 1 ? 's' : '' }}
+        {{ logs.length }} message{{ logs.length !== 1 ? 's' : '' }}
         <template v-if="sharedDestination"> · {{ sharedDestination }}</template>
         <template v-else-if="source"> · {{ source }}</template>
       </span>

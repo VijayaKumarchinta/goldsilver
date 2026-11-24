@@ -102,7 +102,7 @@ const telegramStatus = computed(() => {
   const status = logsData.value?.last_periodic_status
   if (status === 'failed') return 'Last attempt failed'
   if (status === 'pending' || status === 'sending') return 'Retrying delivery'
-  if (logsData.value?.last_periodic_sent_at) return 'Last update delivered'
+  if (logsData.value?.last_periodic_sent_at) return 'Delivered'
   return 'No update sent yet'
 })
 const nextSendText = computed(() => {
