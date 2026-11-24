@@ -43,15 +43,44 @@ def create_app(start_sched: bool = True):
     # index.html so the frontend can render the correct page.
     dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if dist.is_dir():
-        @app.route("/", defaults={"path": ""})
-        @app.route("/<path:path>")
-        def dashboard(path):
-            # Exclude API and WebSocket routes from the SPA fallback.
-            if path.startswith(("api/", "socket.io")):
-                abort(404)
-            if path and (dist / path).is_file():
-                return send_from_directory(dist, path)
-            return send_from_directory(dist, "index.html")
+        index_html = dist / "index.html"
+        if index_html.is_file():
+            @app.route("/", defaults={"path": ""})
+            @app.route("/<path:path>")
+            def dashboard(path):
+                # Exclude API and WebSocket routes from the SPA fallback.
+                if path.startswith(("api/", "socket.io")):
+                    abort(404)
+                if path and (dist / path).is_file():
+                    return send_from_directory(dist, path)
+                return send_from_directory(dist, "index.html")
+        else:
+            # If the build directory exists but index.html is missing, fall back
+            # to a friendly page instead of letting Flask return a raw 404.
+            @app.route("/")
+            def frontend_missing():
+                return (
+                    "<!doctype html>\r\n"
+                    "<html lang=\"en\"><head><meta charset=\"utf-8\">\r\n"
+                    "<title>GoldSilver Dashboard</title></head><body>\r\n"
+                    "<h1>GoldSilver Dashboard</h1>\r\n"
+                    "<p>The frontend build is not present yet.</p>\r\n"
+                    "<p>Once <code>frontend/dist/index.html</code> exists, this page will serve the dashboard.</p>\r\n"
+                    "</body></html>",
+                    200,
+                    {"Content-Type": "text/html; charset=utf-8"},
+                )
+
+        @app.route("/_debug/dist")
+        def debug_dist():
+            from flask import Response
+            return Response(
+                f"dist={dist}\n"
+                f"is_dir={dist.is_dir()}\n"
+                f"index_html={dist / 'index.html'}\n"
+                f"index_exists={ (dist / 'index.html').is_file() }\n",
+                mimetype="text/plain",
+            )
 
     # Ensure the Telegram destination exists from TELEGRAM_CHAT_ID
     ensure_telegram_destination()

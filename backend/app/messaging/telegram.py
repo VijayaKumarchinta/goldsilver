@@ -9,6 +9,10 @@ class TelegramSender(Sender):
             return {"ok": False, "detail": "TELEGRAM_BOT_TOKEN not configured"}
 
         url = f"https://api.telegram.org/bot{Config.TELEGRAM_BOT_TOKEN}/sendMessage"
+        # Sanity check: Telegram rejects MarkdownV2 messages whose every character
+        # is a backslash or whitespace.
+        if not isinstance(text, str) or not text.strip():
+            return {"ok": False, "detail": "message_text_empty"}
         try:
             resp = requests.post(
                 url,

@@ -97,6 +97,8 @@ def scheduled_periodic_update():
         ):
             raise RuntimeError("Telegram update skipped because live market data is unavailable")
 
+        # Always record a fresh periodic_update snapshot so the chart and the
+        # notification history stay on the same 30-minute cadence.
         snapshot_id = save_snapshot(snapshot, event_type="periodic_update")
         created = create_jobs(snapshot_id, "periodic_update", scheduled_for=scheduled_for)
         if not created:

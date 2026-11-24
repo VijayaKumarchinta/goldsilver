@@ -56,8 +56,10 @@ class MarketDataTests(unittest.TestCase):
         gold = snapshot["metals"]["XAU"]
         self.assertEqual(gold["inr_per_10g"], 1150)      # 100/g x 10 x 1.15 import duty
         self.assertTrue(gold["estimated"])
-        self.assertFalse(gold["live"])                   # so Telegram posts are skipped
+        self.assertFalse(gold["live"])
         self.assertIn("estimate", gold["source"])
+        self.assertTrue(snapshot["metals"]["XAG"]["estimated"])
+        self.assertFalse(snapshot["metals"]["XAG"]["live"])
 
     @patch("app.services.market_data.metals_mcx.fetch_mcx")
     @patch("app.services.market_data.metals_xaus.fetch_market_data")

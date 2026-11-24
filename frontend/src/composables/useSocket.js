@@ -1,7 +1,10 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { io } from 'socket.io-client'
 
-const socket = io('/', {
+const apiBase = import.meta.env.VITE_API_BASE || '/api'
+const socketOrigin = new URL(apiBase, window.location.origin).origin
+
+const socket = io(socketOrigin, {
   transports: ['websocket', 'polling'],
   autoConnect: true,
   reconnection: true,

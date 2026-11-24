@@ -15,8 +15,9 @@ MCX sits behind a bot filter and often blocks cloud/datacentre IP addresses, so 
 fail on Render or other hosts. This reads a public website; it is not a licensed MCX data feed.
 
 ## Running on a server (Render and similar)
-- Build: `pip install -r backend/requirements.txt && cd frontend && npm ci && npm run build`
+- Build from the repository root: `pip install -r backend/requirements.txt && cd frontend && npm ci && npm run build`
 - Start: `cd backend && gunicorn -w 1 --threads 8 -b 0.0.0.0:$PORT run:app` (one worker only: it runs the scheduler)
+- The Render backend build installs Python dependencies and builds `frontend/dist` before starting Flask.
 - Flask serves the built dashboard from `frontend/dist`, so no separate frontend host is needed.
 - Free web services sleep when idle, which stops the in-process scheduler and the Telegram posts. Use an always-on plan.
 

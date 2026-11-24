@@ -57,7 +57,14 @@ def _market_open_now() -> bool:
 
 
 def get_latest_snapshot() -> dict:
-    """Return a single-provider snapshot or the latest saved snapshot."""
+    """Return a single-provider snapshot or the latest saved snapshot.
+
+    When MCX futures are reachable, the dashboard shows live futures pricing and
+    Telegram posts are sent. When MCX is unreachable (for example Render blocks the
+    request), we still build a snapshot from the xaus.com spot plus the configured
+    estimate premium so the site can keep displaying a useful reference value.
+    Estimates are not marked live and are therefore not sent as MCX Telegram updates.
+    """
     provider_snapshot = metals_xaus.fetch_market_data()
     if provider_snapshot:
         usd_inr = provider_snapshot["fx_rate"]
@@ -67,7 +74,7 @@ def get_latest_snapshot() -> dict:
             spot_gram = Decimal(str(provider["inr_per_gram"]))
             if mcx:
                 inr_per_gram, source, updated_at, live = mcx[symbol]
-            else:  # MCX unreachable: show an honest estimate, flagged and never posted to Telegram
+            else:
                 premium = Config.ESTIMATE_PREMIUM_GOLD if symbol == "XAU" else Config.ESTIMATE_PREMIUM_SILVER
                 inr_per_gram = spot_gram * (Decimal("1") + Decimal(str(premium)))
                 source, updated_at, live = "xaus.com spot + duty (estimate)", provider["updated_at"], False

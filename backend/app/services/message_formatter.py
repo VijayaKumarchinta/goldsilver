@@ -50,36 +50,15 @@ def format_price_message(snapshot: dict, event_label: str) -> str:
         f"(₹{_number(silver_10g)} per 10 grams)\n"
         f"Source: {gold.get('source') or 'MCX futures'}; {silver.get('source') or 'MCX futures'}\n"
         f"USD/INR: {_number(usd_inr)}\n"
-        f"International spot (reference): Gold ${_number(gold_oz)}/oz; "
-        f"Silver ${_number(silver_oz)}/oz\n"
+        f"International spot (reference): Gold {_number(gold_oz)} USD/oz; "
+        f"Silver {_number(silver_oz)} USD/oz\n"
         f"Checked: {updated}\n\n"
         "MCX futures prices exclude GST and making charges; local retail rates differ."
     )
 
 _TELEGRAM_MD_V2_ESCAPE = {
-    "-": "\\- ",
-    ".": "\\. ",
-    "!": "\\! ",
-    "(": "\\(",
-    ")": "\\)",
-    "*": "\\*",
-    "_": "\\_",
-    "`": "\\`",
-    "[": "\\[",
-    "]": "\\]",
-    "{": "\\{",
-    "}": "\\}",
-    "^": "\\^",
-    "\\": "\\\\",
-    "~": "\\~",
-    "#": "\\#",
-    "+": "\\+",
-    "=": "\\=",
-    "|": "\\|",
-    ">": "\\>",
-    "<": "\\<",
-    "&": "\\&",
-    "$": "\\$",
+    ch: "\\" + ch
+    for ch in r"_*[]()~`>#+-=|{}.!\\"
 }
 
 def _escape_markdown_v2(text: str) -> str:
@@ -91,6 +70,5 @@ def _escape_markdown_v2(text: str) -> str:
         if replacement is None:
             result.append(ch)
         else:
-            result.append(replacement.rstrip(" "))
-    return "".join(result)
+            result.append(replacement)
     return "".join(result)
