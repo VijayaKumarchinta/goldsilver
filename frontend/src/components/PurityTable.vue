@@ -33,6 +33,6 @@ const rows = computed(() => props.purity)
         </tbody>
       </table>
     </div>
-    <p class="hint">Lower purities are estimates derived from the MCX gold price. GST, making charges and local premiums are not included.</p>
+    <p class="hint">22K and 18K rates are derived from the 24K price.</p>
   </div>
 </template>

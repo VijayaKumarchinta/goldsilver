@@ -95,16 +95,6 @@ const marketStatusText = computed(() => {
   if (!prices.value) return loading.value ? 'Checking market session' : 'Market session unavailable'
   return marketOpen.value ? 'Market session open' : 'Market session closed'
 })
-const lastUpdate = computed(() => {
-  const date = parseDate(prices.value?.captured_at)
-  if (!date) return '—'
-  return date.toLocaleTimeString('en-IN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'Asia/Kolkata',
-    hour12: true,
-  }) + ' IST'
-})
 const providerName = computed(() => gold.value?.source || 'MCX futures')
 const usdInr = computed(() => {
   const rate = Number(prices.value?.fx?.USD_INR)
@@ -140,8 +130,9 @@ function changeClass(quote) {
 
 function changeLabel(quote) {
   const change = changePercent(quote)
-  if (change === null) return 'Change unavailable'
-  return `${change > 0 ? '+' : ''}${change.toFixed(2)}% from today’s first saved reading`
+  if (change === null) return 'No saved reading yet'
+  if (change === 0) return 'No change since the first saved reading today'
+  return `${change > 0 ? '+' : ''}${change.toFixed(2)}% since the first saved reading today`
 }
 
 const chartSummary = computed(() => {
@@ -170,9 +161,6 @@ onUnmounted(() => stopAutoRefresh?.())
     <a class="skip-link" href="#main">Skip to market prices</a>
     <HeaderBar
       :market-status="marketStatusText"
-      :last-price-time="lastUpdate"
-      :feed-status="feedStatus"
-      :connected="feedLive"
       @toggle-theme="dashboard.toggleTheme"
     />
 
@@ -187,10 +175,10 @@ onUnmounted(() => stopAutoRefresh?.())
           <span class="feed-light" aria-hidden="true"></span>
           <div class="feed-summary-copy">
             <strong>{{ feedStatus }}</strong>
-            <span><span class="provider-name">{{ providerName }}</span> · dashboard refreshes every 5 seconds</span>
+            <span>Prices refresh every 5 seconds</span>
           </div>
           <div class="feed-summary-time">
-            <span>Last checked</span>
+            <span>Updated</span>
             <strong>{{ formatDateTime(prices?.captured_at) }}</strong>
           </div>
         </div>
@@ -213,11 +201,7 @@ onUnmounted(() => stopAutoRefresh?.())
           <strong>{{ usdInr }}</strong>
         </div>
         <div class="strip-item">
-          <span>Trading session</span>
-          <strong>{{ marketStatusText }}</strong>
-        </div>
-        <div class="strip-item">
-          <span>Last saved observation</span>
+          <span>Last saved reading</span>
           <strong>{{ latestSavedQuote?.label || 'No saved history yet' }}</strong>
         </div>
       </section>
@@ -237,9 +221,8 @@ onUnmounted(() => stopAutoRefresh?.())
             <span v-if="gold">{{ money(gold.close, 0) }}</span>
             <template v-else><span aria-hidden="true">—</span><span class="sr-only">Gold price unavailable</span></template>
           </p>
-          <div class="quote-details">
-            <span>{{ gold ? `${money(gold.inr_per_gram, 2)} / g` : '₹ — / g' }}</span>
-            <span>{{ gold?.usd_per_oz ? `$${Number(gold.usd_per_oz).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / oz` : 'USD — / oz' }}</span>
+          <div class="quote-details">              <span>{{ gold ? `${money(gold.inr_per_gram, 2)} / g` : '₹ — / g' }}</span>
+            <span>{{ gold?.usd_per_oz ? `COMEX $${Number(gold.usd_per_oz).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / oz` : 'COMEX — / oz' }}</span>
           </div>
           <div class="quote-change" :class="changeClass(gold)">
             <span>Session movement</span>
@@ -261,9 +244,8 @@ onUnmounted(() => stopAutoRefresh?.())
             <span v-if="silver">{{ money(silver.close, 0) }}</span>
             <template v-else><span aria-hidden="true">—</span><span class="sr-only">Silver price unavailable</span></template>
           </p>
-          <div class="quote-details">
-            <span>{{ silver ? `${money(silver.inr_per_gram, 2)} / g` : '₹ — / g' }}</span>
-            <span>{{ silver?.usd_per_oz ? `$${Number(silver.usd_per_oz).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / oz` : 'USD — / oz' }}</span>
+          <div class="quote-details">              <span>{{ silver ? `${money(silver.inr_per_gram, 2)} / g` : '₹ — / g' }}</span>
+            <span>{{ silver?.usd_per_oz ? `COMEX $${Number(silver.usd_per_oz).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / oz` : 'COMEX — / oz' }}</span>
           </div>
           <div class="quote-change" :class="changeClass(silver)">
             <span>Session movement</span>
@@ -273,12 +255,13 @@ onUnmounted(() => stopAutoRefresh?.())
       </section>
 
       <section class="analysis-grid">
+        <div class="analysis-main">
         <article class="panel chart-panel">
           <div class="panel-heading">
             <div>
               <p class="panel-eyebrow">SAVED MARKET HISTORY</p>
               <h2>Price movement</h2>
-              <p class="chart-caption">Gold is shown per 10 g; silver is shown per gram. History contains recorded observations only.</p>
+              <p class="chart-caption">Saved readings recorded by this app — not a live quote.</p>
             </div>
             <div class="range-switch" role="group" aria-label="Chart range">
               <button type="button" :aria-pressed="chartRange === '1D'" @click="onRangeChange('1D')">1D</button>
@@ -307,21 +290,6 @@ onUnmounted(() => stopAutoRefresh?.())
             </div>
           </div>
 
-          <div v-if="latestSavedQuote" class="saved-quote-line">
-            <div>
-              <span>Latest saved point</span>
-              <strong>{{ latestSavedQuote.label }}</strong>
-            </div>
-            <div>
-              <span>Gold · ₹ / 10 g</span>
-              <strong>{{ latestSavedQuote.gold === null ? '—' : money(latestSavedQuote.gold, 0) }}</strong>
-            </div>
-            <div>
-              <span>Silver · ₹ / g</span>
-              <strong>{{ latestSavedQuote.silver === null ? '—' : money(latestSavedQuote.silver, 2) }}</strong>
-            </div>
-          </div>
-
           <details v-if="chartRows.length" class="chart-data">
             <summary>View saved observations as a table</summary>
             <div class="chart-data-scroll" role="region" aria-label="Historical gold and silver prices" tabindex="0">
@@ -345,6 +313,14 @@ onUnmounted(() => stopAutoRefresh?.())
             </div>
           </details>
         </article>
+
+        <PurityTable :purity="purity?.purity || []" />
+        <p class="pricing-note">
+          Exchange futures prices, before GST, making charges and local premiums. If the feed is down the dashboard
+          shows the last saved reading and Telegram updates pause. Saved history starts with this app's first reading
+          and is never backfilled.
+        </p>
+        </div>
 
         <aside class="delivery-column" aria-label="Telegram delivery status">
           <section class="delivery-summary">
@@ -370,21 +346,11 @@ onUnmounted(() => stopAutoRefresh?.())
                 <dd>{{ logsData?.interval_minutes || 30 }} minutes</dd>
               </div>
             </dl>
-            <p class="delivery-note">Backend startup checks the saved timer and sends only when due. Missed intervals are not replayed as a flood.</p>
+            <p class="delivery-note">Sends only when due. Missed intervals are not replayed.</p>
           </section>
 
           <NotificationLogs :logs="logsData?.logs || []" :source="logsData?.source" />
         </aside>
-      </section>
-
-      <section class="secondary-grid">
-        <PurityTable :purity="purity?.purity || []" />
-        <p class="pricing-note">
-          Prices are MCX gold and silver futures (front-month contract; silver is quoted per kg and shown per 10 g).
-          They are not local retail quotes: GST, making charges and local premiums are not included. When the market
-          feed cannot be reached the dashboard shows the last saved reading and nothing is posted to Telegram.
-          History is not backfilled: it only holds MCX readings recorded by this app.
-        </p>
       </section>
     </main>
   </div>
@@ -487,7 +453,7 @@ onUnmounted(() => stopAutoRefresh?.())
 
 .market-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -564,6 +530,8 @@ onUnmounted(() => stopAutoRefresh?.())
   gap: 16px;
 }
 
+.analysis-main { display: grid; gap: 16px; min-width: 0; }
+
 .chart-panel { min-width: 0; }
 .panel-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; padding: 17px 18px 13px; border-bottom: 1px solid var(--line); }
 .panel-heading h2,
@@ -576,16 +544,11 @@ onUnmounted(() => stopAutoRefresh?.())
 .range-switch button { min-width: 40px; padding: 5px 8px; border: 0; border-radius: 5px; background: transparent; color: var(--mute); font-size: 11px; font-weight: 700; }
 .range-switch button[aria-pressed="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .1); }
 
-.chart-area { min-height: 310px; padding: 7px 8px 0; }
-.chart-area :deep(.chart-wrap) { height: 310px; }
+.chart-area { min-height: 320px; padding: 7px 8px 0; }
+.chart-area :deep(.chart-wrap) { height: 340px; }
 .history-empty { min-height: 290px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px; color: var(--mute); text-align: center; }
 .history-empty strong { color: var(--ink-2); font-size: 13px; }
 .history-empty span { max-width: 380px; font-size: 12px; }
-
-.saved-quote-line { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 12px; margin: 0 17px; padding: 12px 0; border-top: 1px solid var(--line); }
-.saved-quote-line div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.saved-quote-line span { color: var(--mute); font-size: 11px; }
-.saved-quote-line strong { color: var(--ink); font-size: 11px; }
 
 .chart-data { margin: 0 17px 15px; color: var(--ink-2); font-size: 11px; }
 .chart-data summary { padding: 8px 0; cursor: pointer; font-weight: 650; }
@@ -607,8 +570,14 @@ onUnmounted(() => stopAutoRefresh?.())
 .delivery-note { margin: 10px 0 0; color: var(--mute); font-size: 11px; line-height: 1.55; }
 .delivery-column :deep(.panel) { min-width: 0; }
 
-.secondary-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(250px, .8fr); gap: 16px; align-items: start; }
-.pricing-note { margin: 0; padding: 16px 2px; color: var(--mute); font-size: 11px; line-height: 1.7; }
+.pricing-note {
+  max-width: 96ch;
+  margin: 0;
+  padding: 0 2px;
+  color: var(--mute);
+  font-size: 12px;
+  line-height: 1.7;
+}
 
 @media (max-width: 1000px) {
   .dashboard-main { padding: 24px 20px 40px; }
@@ -621,11 +590,13 @@ onUnmounted(() => stopAutoRefresh?.())
   .dashboard-intro { align-items: stretch; flex-direction: column; gap: 14px; }
   .feed-summary { min-width: 0; }
   .market-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .strip-item:nth-child(3) { border-left: 0; border-top: 1px solid var(--line); }
-  .strip-item:nth-child(4) { border-top: 1px solid var(--line); }
+  .strip-item:nth-child(3) {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
   .quote-grid,
-  .analysis-grid,
-  .secondary-grid { grid-template-columns: minmax(0, 1fr); }
+  .analysis-grid { grid-template-columns: minmax(0, 1fr); }
   .quote-card { padding: 17px; }
   .panel-heading { align-items: flex-start; flex-direction: column; }
 }
@@ -636,7 +607,5 @@ onUnmounted(() => stopAutoRefresh?.())
   .strip-item { padding: 10px; }
   .strip-item strong { font-size: 11px; }
   .quote-value { font-size: 36px; }
-  .saved-quote-line { grid-template-columns: 1fr 1fr; }
-  .saved-quote-line div:first-child { grid-column: 1 / -1; }
 }
 </style>

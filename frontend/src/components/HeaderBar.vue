@@ -1,11 +1,8 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 
 const props = defineProps({
   marketStatus: { type: String, required: true },
-  lastPriceTime: { type: String, default: '' },
-  feedStatus: { type: String, default: 'Market feed unavailable' },
-  connected: { type: Boolean, default: true },
 })
 
 const emit = defineEmits(['toggle-theme'])
@@ -17,8 +14,7 @@ function getTheme() {
 
 const isDark = ref(getTheme() === 'dark')
 
-const chipText = computed(() => props.feedStatus)
-const chipDot = computed(() => props.connected ? 'green' : 'amber')
+
 
 function toggleTheme() {
   emit('toggle-theme')
@@ -43,14 +39,7 @@ function toggleTheme() {
       </div>
 
       <div class="header-right">
-        <span class="header-market">
-          {{ marketStatus }}
-          <small v-if="lastPriceTime"> · Checked {{ lastPriceTime }}</small>
-        </span>
-        <span class="chip" :class="{ stale: !connected }">
-          <span class="dot" :class="chipDot" aria-hidden="true"></span>
-          {{ chipText }}
-        </span>
+        <span class="header-market">{{ marketStatus }}</span>
         <button
           class="icon-btn"
           type="button"
@@ -77,12 +66,6 @@ function toggleTheme() {
   white-space: normal;
   line-height: 1.35;
   text-align: right;
-}
-
-.header-market small {
-  color: var(--mute);
-  font-size: 10px;
-  font-weight: 500;
 }
 
 .chip.stale {

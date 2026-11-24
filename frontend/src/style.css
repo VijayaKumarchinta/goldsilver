@@ -601,6 +601,8 @@ tbody tr:hover td { background: color-mix(in srgb, var(--accent-bg) 35%, transpa
 
 .log-region { max-height: 290px; overflow-y: auto; }
 
+.log-list.single-destination .log-row { grid-template-columns: minmax(0, 1fr) 64px; }
+
 .log-list {
   margin: 0;
   padding: 0;
@@ -660,23 +662,19 @@ tbody tr:hover td { background: color-mix(in srgb, var(--accent-bg) 35%, transpa
       "dest status";
     gap: 6px 12px;
   }
+  .log-list.single-destination .log-row {
+    grid-template-areas: "event status";
+  }
   .log-event { grid-area: event; }
   .log-dest { grid-area: dest; min-width: 0; text-align: left; }
   .status-pill { grid-area: status; grid-row: 1 / 3; align-self: center; }
+  .log-list.single-destination .status-pill { grid-row: 1 / 2; }
 }
 
 @media (max-width: 400px) {
-  .header { height: auto; min-height: 64px; }
-  .header-inner {
-    height: auto;
-    min-height: 64px;
-    flex-wrap: wrap;
-    gap: 4px 8px;
-    padding: 8px 12px;
-  }
-  .brand { flex: 1 1 auto; }
-  .header-right { width: 100%; justify-content: space-between; gap: 8px; }
-  .header-market { max-width: none; min-width: 0; flex: 1; white-space: normal; }
+  .header-inner { gap: 8px; padding: 0 12px; }
+  .brand { min-width: 0; }
+  .header-right { flex: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

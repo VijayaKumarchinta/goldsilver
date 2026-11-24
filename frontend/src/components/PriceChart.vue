@@ -17,7 +17,6 @@ const isDark = computed(() =>
 
 function buildOption() {
   const dark = isDark.value
-  const text = dark ? '#c5cbd3' : '#374151'
   const axisLine = dark ? '#252c37' : '#e5e7eb'
   const axisLabel = dark ? '#8a93a3' : '#6b7280'
   const goldLabel = dark ? '#e2bf79' : '#815515'
@@ -30,10 +29,21 @@ function buildOption() {
     return null
   }
 
-  const maxGold = Math.max(...goldSeries.map((d) => d[1]), 10000)
-  const minGold = Math.min(...goldSeries.map((d) => d[1]), 0)
-  const maxSilver = Math.max(...silverSeries.map((d) => d[1]), 100)
-  const minSilver = Math.min(...silverSeries.map((d) => d[1]), 0)
+  // Fit the axes to the data instead of anchoring at zero, otherwise a day of
+  // small moves is drawn as one flat line against 0-1,26,000.
+  const numeric = (series) => series.map((d) => d[1]).filter((v) => Number.isFinite(v) && v > 0)
+  function rangeFor(values, fallback, step) {
+    if (!values.length) return { min: fallback, max: fallback * 1.1 }
+    const lo = Math.min(...values)
+    const hi = Math.max(...values)
+    const pad = Math.max((hi - lo) * 0.15, hi * 0.002)
+    return {
+      min: Math.max(0, Math.floor((lo - pad) / step) * step),
+      max: Math.ceil((hi + pad) / step) * step,
+    }
+  }
+  const goldRange = rangeFor(numeric(goldSeries), 10000, 100)
+  const silverRange = rangeFor(numeric(silverSeries), 100, 0.5)
 
   function parseDate(value) {
     const date = new Date(String(value).replace(' ', 'T'))
@@ -79,6 +89,7 @@ function buildOption() {
       return diffMs > 3 * 3600 * 1000
     }
     const idx = props.labels.indexOf(value)
+    if (idx === props.labels.length - 1) return formatTime(value)
     if (!hasAdjacent(idx)) return ''
     if (seriesType === 'date') {
       return date.toLocaleDateString('en-IN', {
@@ -93,20 +104,9 @@ function buildOption() {
   return {
     backgroundColor: 'transparent',
     animation: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-    grid: { left: 56, right: 56, top: 28, bottom: 40 },
-    legend: {
-      data: ['Gold futures (₹ / 10 g)', 'Silver futures (₹ / g)'],
-      top: 6,
-      right: 12,
-      textStyle: {
-        color: text,
-        fontSize: 12,
-        fontFamily: 'Segoe UI, Arial, system-ui, sans-serif',
-        fontWeight: 500,
-      },
-      itemWidth: 16,
-      itemHeight: 3,
-    },
+    grid: { left: 62, right: 58, top: 42, bottom: 40 },
+    // The two y-axis names already label the series; a legend would repeat them.
+    legend: { show: false },
     tooltip: {
       trigger: 'axis',
       backgroundColor: dark ? '#1a212b' : '#ffffff',
@@ -144,18 +144,19 @@ function buildOption() {
     yAxis: [
       {
         type: 'value',
-        name: 'Gold futures (₹ / 10 g)',
-        nameTextStyle: { color: goldLabel, fontSize: 11, fontWeight: 500 },
+        name: 'Gold (₹ / 10 g)',
+        nameTextStyle: { color: goldLabel, fontSize: 11, fontWeight: 500, align: 'left' },
         position: 'left',
-        min: Math.floor(minGold / 500) * 500,
-        max: Math.ceil(maxGold / 500) * 500,
+        min: goldRange.min,
+        max: goldRange.max,
+        splitNumber: 4,
         axisLine: { lineStyle: { color: axisLine } },
         axisTick: { show: false },
         axisLabel: {
           color: axisLabel,
           fontSize: 11,
           fontFamily: 'Segoe UI, Arial, system-ui, sans-serif',
-          formatter: '{value}',
+          formatter: (v) => Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 }),
         },
         splitLine: {
           lineStyle: { color: dark ? '#252c37' : '#e5e7eb', type: 'dashed' },
@@ -163,17 +164,19 @@ function buildOption() {
       },
       {
         type: 'value',
-        name: 'Silver futures (₹ / g)',
-        nameTextStyle: { color: silverLabel, fontSize: 11, fontWeight: 500 },
+        name: 'Silver (₹ / g)',
+        nameTextStyle: { color: silverLabel, fontSize: 11, fontWeight: 500, align: 'right' },
         position: 'right',
-        min: Math.floor(minSilver),
-        max: Math.ceil(maxSilver),
+        min: silverRange.min,
+        max: silverRange.max,
+        splitNumber: 4,
         axisLine: { lineStyle: { color: axisLine } },
         axisTick: { show: false },
         axisLabel: {
           color: axisLabel,
           fontSize: 11,
           fontFamily: 'Segoe UI, Arial, system-ui, sans-serif',
+          formatter: (v) => Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 }),
         },
         splitLine: { show: false },
       },
@@ -185,7 +188,8 @@ function buildOption() {
         smooth: 0.35,
         symbol: 'circle',
         symbolSize: 5,
-        showSymbol: false,
+        // A single saved reading has no line segment; show the point instead.
+        showSymbol: goldSeries.length <= 15,
         emphasis: { focus: 'series' },
         lineStyle: { color: '#a8741a', width: 2.5 },
         areaStyle: {
@@ -210,7 +214,7 @@ function buildOption() {
         smooth: 0.35,
         symbol: 'circle',
         symbolSize: 4,
-        showSymbol: false,
+        showSymbol: silverSeries.length <= 15,
         emphasis: { focus: 'series' },
         lineStyle: { color: '#6b7280', width: 2, type: 'dashed' },
         data: silverSeries,
@@ -236,6 +240,7 @@ async function initChart() {
     echartsModule = await import('echarts')
   }
   chartInstance = echartsModule.init(el)
+  observeSize(el)
   const option = buildOption()
   if (option) {
     chartInstance.setOption(option, { notMerge: true })
@@ -254,6 +259,15 @@ function updateChart() {
 }
 
 let resizeTimer = null
+let resizeObserver = null
+
+function observeSize(el) {
+  if (typeof ResizeObserver === 'undefined') return
+  resizeObserver?.disconnect()
+  resizeObserver = new ResizeObserver(() => chartInstance?.resize())
+  resizeObserver.observe(el)
+}
+
 function handleResize() {
   if (resizeTimer) clearTimeout(resizeTimer)
   resizeTimer = setTimeout(() => {
@@ -271,6 +285,8 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
   if (resizeTimer) clearTimeout(resizeTimer)
+  resizeObserver?.disconnect()
+  resizeObserver = null
   if (chartInstance) {
     chartInstance.dispose()
     chartInstance = null

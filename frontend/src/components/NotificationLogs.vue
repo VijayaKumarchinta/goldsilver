@@ -1,7 +1,16 @@
 <script setup>
+import { computed } from 'vue'
+
 const props = defineProps({
   logs: { type: Array, default: () => [] },
   source: { type: String, default: 'db' },
+})
+
+// When every entry went to the same chat, name it once in the header instead of
+// repeating it on every row.
+const sharedDestination = computed(() => {
+  const names = new Set(props.logs.map((log) => log.destination).filter(Boolean))
+  return names.size === 1 ? [...names][0] : null
 })
 
 function pillClass(status) {
@@ -53,7 +62,11 @@ function formatTime(iso) {
   <div class="panel">
     <div class="panel-header">
       <h2 id="notification-log-heading">Telegram Notifications</h2>
-      <span class="panel-sub">{{ logs.length }} notification{{ logs.length !== 1 ? 's' : '' }} · {{ source || 'db' }}</span>
+      <span class="panel-sub">
+        {{ logs.length }} notification{{ logs.length !== 1 ? 's' : '' }}
+        <template v-if="sharedDestination"> · {{ sharedDestination }}</template>
+        <template v-else-if="source"> · {{ source }}</template>
+      </span>
     </div>
     <div class="panel-body">
       <div v-if="!logs.length" class="empty">No notifications sent yet.</div>
@@ -63,20 +76,18 @@ function formatTime(iso) {
         aria-labelledby="notification-log-heading"
         tabindex="0"
       >
-        <ul class="log-list">
+        <ul class="log-list" :class="{ 'single-destination': sharedDestination }">
           <li v-for="log in logs" :key="log.id || log.time" class="log-row">
             <div class="log-event">
               <div class="log-event-name">{{ eventLabel(log.event_type || log.event) }}</div>
               <div class="log-meta">
-                {{ log.status === 'sent' ? 'Sent' : 'Updated' }}
                 {{ formatTime(log.sent_at || log.updated_at || log.created_at || log.time) }}
               </div>
               <div v-if="log.note" class="log-meta">{{ log.note }}</div>
               <div v-if="log.last_error" class="log-meta">{{ log.last_error }}</div>
             </div>
-            <div class="log-dest">
+            <div v-if="!sharedDestination" class="log-dest">
               <div class="dest-name">{{ log.destination }}</div>
-              <div class="dest-platform">{{ log.platform }}</div>
             </div>
             <span :class="pillClass(log.status)" class="status-pill">{{ statusLabel(log.status) }}</span>
           </li>
