@@ -3,9 +3,7 @@ services:
     name: gold-silver-bot
     env: python
     plan: free
-    buildCommand: |
-      pip install -r requirements.txt
-      cd ../frontend && npm ci && npm run build
+    buildCommand: bash build.sh
     startCommand: cd backend && python run.py
     envVars:
       - key: DATABASE_URL
