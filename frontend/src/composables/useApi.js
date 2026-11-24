@@ -49,11 +49,6 @@ export function useApi() {
         error.value = failed.length === 1
           ? failed[0]
           : `Some endpoints failed: ${failed.slice(0, 3).join('; ')}${failed.length > 3 ? '; ...' : ''}`
-      } else if (
-        prices.value?.gold?.live === false
-        || prices.value?.silver?.live === false
-      ) {
-        error.value = 'Live price feed unavailable; showing the last saved prices.'
       }
     } catch (e) {
       error.value = e?.message ?? 'Backend unreachable'

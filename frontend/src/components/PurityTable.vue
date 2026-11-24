@@ -14,8 +14,9 @@ const rows = computed(() => props.purity)
     <div class="tabs">
       <h2 style="margin:0">Gold by purity and silver</h2>
     </div>
-    <div class="scroll">
+    <div class="scroll" role="region" aria-label="Gold by purity and silver prices" tabindex="0">
       <table>
+        <caption class="sr-only">Gold rates by purity and silver 999, per gram and per standard lot</caption>
         <thead>
           <tr>
             <th scope="col">Item</th>

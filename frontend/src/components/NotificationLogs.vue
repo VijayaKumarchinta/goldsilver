@@ -57,30 +57,31 @@ function formatTime(iso) {
     </div>
     <div class="panel-body">
       <div v-if="!logs.length" class="empty">No notifications sent yet.</div>
-      <div
+      <section
         v-else
-        class="log-list"
-        role="region"
+        class="log-region"
         aria-labelledby="notification-log-heading"
         tabindex="0"
       >
-        <div v-for="log in logs" :key="log.id || log.time" class="log-row">
-          <div class="log-event">
-            <div class="log-event-name">{{ eventLabel(log.event_type || log.event) }}</div>
-            <div class="log-meta">
-              {{ log.status === 'sent' ? 'Sent' : 'Updated' }}
-              {{ formatTime(log.sent_at || log.updated_at || log.created_at || log.time) }}
+        <ul class="log-list">
+          <li v-for="log in logs" :key="log.id || log.time" class="log-row">
+            <div class="log-event">
+              <div class="log-event-name">{{ eventLabel(log.event_type || log.event) }}</div>
+              <div class="log-meta">
+                {{ log.status === 'sent' ? 'Sent' : 'Updated' }}
+                {{ formatTime(log.sent_at || log.updated_at || log.created_at || log.time) }}
+              </div>
+              <div v-if="log.note" class="log-meta">{{ log.note }}</div>
+              <div v-if="log.last_error" class="log-meta">{{ log.last_error }}</div>
             </div>
-            <div v-if="log.note" class="log-meta">{{ log.note }}</div>
-            <div v-if="log.last_error" class="log-meta">{{ log.last_error }}</div>
-          </div>
-          <div class="log-dest">
-            <div class="dest-name">{{ log.destination }}</div>
-            <div class="dest-platform">{{ log.platform }}</div>
-          </div>
-          <span :class="pillClass(log.status)" class="status-pill">{{ statusLabel(log.status) }}</span>
-        </div>
-      </div>
+            <div class="log-dest">
+              <div class="dest-name">{{ log.destination }}</div>
+              <div class="dest-platform">{{ log.platform }}</div>
+            </div>
+            <span :class="pillClass(log.status)" class="status-pill">{{ statusLabel(log.status) }}</span>
+          </li>
+        </ul>
+      </section>
     </div>
   </div>
 </template>

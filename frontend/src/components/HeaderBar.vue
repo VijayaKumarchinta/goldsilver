@@ -29,8 +29,8 @@ function toggleTheme() {
 <template>
   <header class="header">
     <div class="header-inner">
-      <a href="#" class="brand" aria-label="Bullion Desk India home">
-        <span class="brand-mark">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="9"/>
             <path d="M12 3v18M3 12h18"/>
@@ -40,7 +40,7 @@ function toggleTheme() {
           Bullion Desk
           <small>India</small>
         </span>
-      </a>
+      </div>
 
       <div class="header-right">
         <span class="header-market">
@@ -48,13 +48,14 @@ function toggleTheme() {
           <small v-if="lastPriceTime"> · Checked {{ lastPriceTime }}</small>
         </span>
         <span class="chip" :class="{ stale: !connected }">
-          <span class="dot" :class="chipDot"></span>
+          <span class="dot" :class="chipDot" aria-hidden="true"></span>
           {{ chipText }}
         </span>
         <button
           class="icon-btn"
           type="button"
           @click="toggleTheme"
+          :aria-pressed="isDark"
           :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
         >
           <svg v-if="isDark" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">

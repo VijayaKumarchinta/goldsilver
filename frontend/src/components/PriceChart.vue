@@ -95,7 +95,7 @@ function buildOption() {
     animation: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     grid: { left: 56, right: 56, top: 28, bottom: 40 },
     legend: {
-      data: ['Gold 24K spot (₹ / 10 g)', 'Silver 999 spot (₹ / g)'],
+      data: ['Gold futures (₹ / 10 g)', 'Silver futures (₹ / g)'],
       top: 6,
       right: 12,
       textStyle: {
@@ -115,15 +115,15 @@ function buildOption() {
       extraCssText: 'box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-radius: 8px;',
       formatter: (params) => {
         if (!params || !params.length) return ''
-        const goldParam = params.find((item) => item.seriesName === 'Gold 24K spot (₹ / 10 g)')
-        const silverParam = params.find((item) => item.seriesName === 'Silver 999 spot (₹ / g)')
+        const goldParam = params.find((item) => item.seriesName === 'Gold futures (₹ / 10 g)')
+        const silverParam = params.find((item) => item.seriesName === 'Silver futures (₹ / g)')
         const t = formatDateTime(params[0].axisValue || params[0].name || '')
         const goldVal = Array.isArray(goldParam?.value) ? goldParam.value[1] : (goldParam?.value ?? 0)
         const silverVal = Array.isArray(silverParam?.value) ? silverParam.value[1] : (silverParam?.value ?? 0)
         return `<div style="font-size:12px;padding:4px 2px">
           <div style="font-weight:700;margin-bottom:6px">${t} IST</div>
-          <div style="color:${goldLabel}">Gold 24K spot · ₹${goldVal.toLocaleString('en-IN')} / 10 g</div>
-          <div style="color:${silverLabel}">Silver 999 spot · ₹${silverVal.toLocaleString('en-IN')} / g</div>
+          <div style="color:${goldLabel}">Gold futures · ₹${goldVal.toLocaleString('en-IN')} / 10 g</div>
+          <div style="color:${silverLabel}">Silver futures · ₹${silverVal.toLocaleString('en-IN')} / g</div>
         </div>`
       },
     },
@@ -144,7 +144,7 @@ function buildOption() {
     yAxis: [
       {
         type: 'value',
-        name: 'Gold 24K spot (₹ / 10 g)',
+        name: 'Gold futures (₹ / 10 g)',
         nameTextStyle: { color: goldLabel, fontSize: 11, fontWeight: 500 },
         position: 'left',
         min: Math.floor(minGold / 500) * 500,
@@ -163,7 +163,8 @@ function buildOption() {
       },
       {
         type: 'value',
-        name: '',
+        name: 'Silver futures (₹ / g)',
+        nameTextStyle: { color: silverLabel, fontSize: 11, fontWeight: 500 },
         position: 'right',
         min: Math.floor(minSilver),
         max: Math.ceil(maxSilver),
@@ -179,7 +180,7 @@ function buildOption() {
     ],
     series: [
       {
-        name: 'Gold 24K spot (₹ / 10 g)',
+        name: 'Gold futures (₹ / 10 g)',
         type: 'line',
         smooth: 0.35,
         symbol: 'circle',
@@ -204,7 +205,7 @@ function buildOption() {
         yAxisIndex: 0,
       },
       {
-        name: 'Silver 999 spot (₹ / g)',
+        name: 'Silver futures (₹ / g)',
         type: 'line',
         smooth: 0.35,
         symbol: 'circle',

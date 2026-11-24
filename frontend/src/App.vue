@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import HeaderBar from './components/HeaderBar.vue'
 import NotificationLogs from './components/NotificationLogs.vue'
 import PriceChart from './components/PriceChart.vue'
@@ -60,12 +60,37 @@ const feedStatus = computed(() => {
 const feedAlert = computed(() => {
   const feed = prices.value?.feed
   if (!feed?.stale) return ''
-  const minutes = Math.max(1, Math.round((Number(feed.age_seconds) || 0) / 60))
   const since = feed.last_success_at
-    ? `last live quote ${formatDateTime(feed.last_success_at)}`
-    : 'no live quote since startup'
-  return `Market feed down for ${minutes} min — ${since}. Showing saved prices; Telegram updates are paused until it recovers.`
+    ? `since ${formatDateTime(feed.last_success_at)}`
+    : 'since the backend started'
+  return `Live market feed unavailable ${since}. Showing the last saved prices; Telegram updates are paused until it recovers.`
 })
+// Announced only when the feed state changes, never on the 5-second poll.
+const feedAnnouncement = ref('')
+let lastFeedState = null
+watch(
+  () => ({
+    ready: Boolean(prices.value),
+    live: feedLive.value,
+    stale: Boolean(prices.value?.feed?.stale),
+  }),
+  (next) => {
+    if (!next.ready) return
+    const state = next.stale ? 'stale' : next.live ? 'live' : 'saved'
+    if (lastFeedState === null) {
+      lastFeedState = state
+      return
+    }
+    if (state === lastFeedState) return
+    lastFeedState = state
+    feedAnnouncement.value = state === 'stale'
+      ? 'Live market feed unavailable. Showing saved prices; Telegram updates are paused.'
+      : state === 'live'
+        ? 'Live market feed restored.'
+        : 'Live market feed unavailable. Showing saved prices.'
+  },
+  { immediate: true },
+)
 const marketStatusText = computed(() => {
   if (!prices.value) return loading.value ? 'Checking market session' : 'Market session unavailable'
   return marketOpen.value ? 'Market session open' : 'Market session closed'
@@ -80,7 +105,7 @@ const lastUpdate = computed(() => {
     hour12: true,
   }) + ' IST'
 })
-const providerName = computed(() => gold.value?.source?.toUpperCase() || 'MCX')
+const providerName = computed(() => gold.value?.source || 'MCX futures')
 const usdInr = computed(() => {
   const rate = Number(prices.value?.fx?.USD_INR)
   return Number.isFinite(rate) && rate > 0 ? rate.toFixed(4) : '—'
@@ -90,9 +115,10 @@ const telegramStatus = computed(() => {
   if (status === 'failed') return 'Latest attempt failed'
   if (status === 'pending' || status === 'sending') return 'Delivery retry pending'
   if (logsData.value?.last_periodic_sent_at) return '30-minute update delivered'
-  return 'No hourly delivery recorded'
+  return 'No 30-minute delivery recorded yet'
 })
 const nextSendText = computed(() => {
+  if (prices.value?.feed?.stale) return 'Paused until the market feed returns'
   const value = logsData.value?.next_send_at
   const date = parseDate(value)
   if (!date) return 'Checking schedule'
@@ -141,6 +167,7 @@ onUnmounted(() => stopAutoRefresh?.())
 
 <template>
   <div class="app">
+    <a class="skip-link" href="#main">Skip to market prices</a>
     <HeaderBar
       :market-status="marketStatusText"
       :last-price-time="lastUpdate"
@@ -149,18 +176,18 @@ onUnmounted(() => stopAutoRefresh?.())
       @toggle-theme="dashboard.toggleTheme"
     />
 
-    <main class="main dashboard-main">
+    <main id="main" class="main dashboard-main" tabindex="-1" :aria-busy="!prices && loading ? 'true' : undefined">
       <section class="dashboard-intro">
         <div>
           <p class="dashboard-eyebrow">MARKET MONITOR · INDIA</p>
           <h1>Gold and silver, clearly.</h1>
           <p class="dashboard-lede">MCX gold and silver futures, with international spot and USD/INR for reference. All times shown in IST.</p>
         </div>
-        <div class="feed-summary" :class="{ 'feed-summary-stale': !feedLive }" role="status">
+        <div class="feed-summary" :class="{ 'feed-summary-stale': !feedLive }">
           <span class="feed-light" aria-hidden="true"></span>
           <div class="feed-summary-copy">
             <strong>{{ feedStatus }}</strong>
-            <span>{{ providerName }} · dashboard refreshes every 5 seconds</span>
+            <span><span class="provider-name">{{ providerName }}</span> · dashboard refreshes every 5 seconds</span>
           </div>
           <div class="feed-summary-time">
             <span>Last checked</span>
@@ -170,7 +197,8 @@ onUnmounted(() => stopAutoRefresh?.())
       </section>
 
       <div v-if="error" class="dashboard-alert" role="alert">{{ error }}</div>
-      <div v-if="feedAlert" class="dashboard-alert feed-alert" role="alert">{{ feedAlert }}</div>
+      <p class="sr-only" aria-live="polite" aria-atomic="true">{{ feedAnnouncement }}</p>
+      <div v-if="feedAlert" class="dashboard-alert feed-alert" role="status">{{ feedAlert }}</div>
       <div v-if="!prices && loading" class="dashboard-empty" role="status">
         Connecting to the backend and loading the latest saved market data…
       </div>
@@ -178,7 +206,7 @@ onUnmounted(() => stopAutoRefresh?.())
       <section class="market-strip" aria-label="Market data status">
         <div class="strip-item">
           <span>Price source</span>
-          <strong>{{ providerName }}</strong>
+          <strong class="provider-name">{{ providerName }}</strong>
         </div>
         <div class="strip-item">
           <span>USD / INR</span>
@@ -205,7 +233,10 @@ onUnmounted(() => stopAutoRefresh?.())
               {{ gold?.live ? 'Live' : 'Saved' }}
             </span>
           </div>
-          <p class="quote-value">{{ gold ? money(gold.close, 0) : '—' }}</p>
+          <p class="quote-value">
+            <span v-if="gold">{{ money(gold.close, 0) }}</span>
+            <template v-else><span aria-hidden="true">—</span><span class="sr-only">Gold price unavailable</span></template>
+          </p>
           <div class="quote-details">
             <span>{{ gold ? `${money(gold.inr_per_gram, 2)} / g` : '₹ — / g' }}</span>
             <span>{{ gold?.usd_per_oz ? `$${Number(gold.usd_per_oz).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / oz` : 'USD — / oz' }}</span>
@@ -226,7 +257,10 @@ onUnmounted(() => stopAutoRefresh?.())
               {{ silver?.live ? 'Live' : 'Saved' }}
             </span>
           </div>
-          <p class="quote-value">{{ silver ? money(silver.close, 0) : '—' }}</p>
+          <p class="quote-value">
+            <span v-if="silver">{{ money(silver.close, 0) }}</span>
+            <template v-else><span aria-hidden="true">—</span><span class="sr-only">Silver price unavailable</span></template>
+          </p>
           <div class="quote-details">
             <span>{{ silver ? `${money(silver.inr_per_gram, 2)} / g` : '₹ — / g' }}</span>
             <span>{{ silver?.usd_per_oz ? `$${Number(silver.usd_per_oz).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / oz` : 'USD — / oz' }}</span>
@@ -254,7 +288,12 @@ onUnmounted(() => stopAutoRefresh?.())
           </div>
 
           <p class="sr-only" aria-live="polite">{{ chartSummary }}</p>
-          <div class="chart-area" role="img" aria-label="Gold and silver saved price history" :aria-describedby="chartRows.length ? undefined : 'history-empty'">
+          <div
+            class="chart-area"
+            role="img"
+            :aria-label="`Saved ${chartRange} history: gold futures in rupees per 10 grams, silver futures in rupees per gram`"
+            :aria-describedby="chartRows.length ? undefined : 'history-empty'"
+          >
             <PriceChart
               v-if="chart?.labels?.length"
               :labels="chart.labels"
@@ -369,9 +408,9 @@ onUnmounted(() => stopAutoRefresh?.())
 .panel-eyebrow {
   margin: 0 0 7px;
   color: var(--gold);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
-  letter-spacing: .14em;
+  letter-spacing: .12em;
   text-transform: uppercase;
 }
 
@@ -410,7 +449,7 @@ onUnmounted(() => stopAutoRefresh?.())
   background: var(--up);
 }
 
-.feed-summary-stale .feed-light { background: #c79532; }
+.feed-summary-stale .feed-light { background: var(--gold); }
 
 .feed-summary-copy,
 .feed-summary-time {
@@ -423,7 +462,10 @@ onUnmounted(() => stopAutoRefresh?.())
 .feed-summary-copy strong,
 .feed-summary-time strong { color: var(--ink); font-size: 12px; }
 .feed-summary-copy span,
-.feed-summary-time span { color: var(--mute); font-size: 10px; }
+.feed-summary-time span {
+  color: var(--mute);
+  font-size: 11px;
+}
 
 .feed-summary-time {
   min-width: 142px;
@@ -461,8 +503,15 @@ onUnmounted(() => stopAutoRefresh?.())
 }
 
 .strip-item + .strip-item { border-left: 1px solid var(--line); }
-.strip-item span { color: var(--mute); font-size: 10px; }
-.strip-item strong { overflow: hidden; color: var(--ink); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.strip-item span { color: var(--mute); font-size: 11px; }
+
+.strip-item strong {
+  color: var(--ink);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.provider-name { text-transform: uppercase; letter-spacing: .04em; }
 
 .quote-grid {
   display: grid;
@@ -486,9 +535,9 @@ onUnmounted(() => stopAutoRefresh?.())
 
 .silver-quote { border-top-color: var(--silver); }
 .quote-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; min-height: 42px; }
-.quote-symbol { color: var(--mute); font-size: 10px; font-weight: 800; letter-spacing: .12em; }
+.quote-symbol { color: var(--mute); font-size: 11px; font-weight: 800; letter-spacing: .12em; }
 .quote-heading h2 { margin: 5px 0 0; color: var(--ink-2); font-size: 13px; font-weight: 650; }
-.quote-state { padding: 3px 8px; border-radius: 999px; background: var(--up-bg); color: var(--up); font-size: 10px; font-weight: 750; }
+.quote-state { padding: 3px 8px; border-radius: 999px; background: var(--up-bg); color: var(--up); font-size: 11px; font-weight: 750; }
 .quote-state.stale { background: var(--gold-soft); color: var(--gold); }
 
 .quote-value {
@@ -535,7 +584,7 @@ onUnmounted(() => stopAutoRefresh?.())
 
 .saved-quote-line { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 12px; margin: 0 17px; padding: 12px 0; border-top: 1px solid var(--line); }
 .saved-quote-line div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.saved-quote-line span { color: var(--mute); font-size: 10px; }
+.saved-quote-line span { color: var(--mute); font-size: 11px; }
 .saved-quote-line strong { color: var(--ink); font-size: 11px; }
 
 .chart-data { margin: 0 17px 15px; color: var(--ink-2); font-size: 11px; }
@@ -548,14 +597,14 @@ onUnmounted(() => stopAutoRefresh?.())
 .delivery-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .delivery-indicator.unknown { background: var(--mute); }
 .delivery-indicator.pending,
-.delivery-indicator.sending { background: #c79532; }
+.delivery-indicator.sending { background: var(--gold); }
 .delivery-indicator.failed { background: var(--down); }
 .delivery-state { margin: 14px 0 15px; color: var(--ink); font-size: 13px; font-weight: 700; }
 .delivery-facts { margin: 0; }
 .delivery-facts div { display: flex; flex-direction: column; gap: 3px; padding: 10px 0; border-top: 1px solid var(--line); }
-.delivery-facts dt { color: var(--mute); font-size: 10px; }
+.delivery-facts dt { color: var(--mute); font-size: 11px; }
 .delivery-facts dd { margin: 0; color: var(--ink); font-size: 12px; font-weight: 650; }
-.delivery-note { margin: 10px 0 0; color: var(--mute); font-size: 10px; line-height: 1.5; }
+.delivery-note { margin: 10px 0 0; color: var(--mute); font-size: 11px; line-height: 1.55; }
 .delivery-column :deep(.panel) { min-width: 0; }
 
 .secondary-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(250px, .8fr); gap: 16px; align-items: start; }
