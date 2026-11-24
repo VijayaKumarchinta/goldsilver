@@ -57,6 +57,15 @@ const feedStatus = computed(() => {
   if (!prices.value) return loading.value ? 'Connecting to market feed' : 'Market feed unavailable'
   return feedLive.value ? 'Live market feed' : 'Market feed unavailable: showing saved prices'
 })
+const feedAlert = computed(() => {
+  const feed = prices.value?.feed
+  if (!feed?.stale) return ''
+  const minutes = Math.max(1, Math.round((Number(feed.age_seconds) || 0) / 60))
+  const since = feed.last_success_at
+    ? `last live quote ${formatDateTime(feed.last_success_at)}`
+    : 'no live quote since startup'
+  return `Market feed down for ${minutes} min — ${since}. Showing saved prices; Telegram updates are paused until it recovers.`
+})
 const marketStatusText = computed(() => {
   if (!prices.value) return loading.value ? 'Checking market session' : 'Market session unavailable'
   return marketOpen.value ? 'Market session open' : 'Market session closed'
@@ -161,6 +170,7 @@ onUnmounted(() => stopAutoRefresh?.())
       </section>
 
       <div v-if="error" class="dashboard-alert" role="alert">{{ error }}</div>
+      <div v-if="feedAlert" class="dashboard-alert feed-alert" role="alert">{{ feedAlert }}</div>
       <div v-if="!prices && loading" class="dashboard-empty" role="status">
         Connecting to the backend and loading the latest saved market data…
       </div>

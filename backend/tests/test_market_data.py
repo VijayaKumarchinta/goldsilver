@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from app.services import market_data
@@ -61,6 +61,44 @@ class MarketDataTests(unittest.TestCase):
         self.assertEqual(market_data.source_family("MCX GOLD 05DEC2026 futures"), "mcx")
         self.assertEqual(market_data.source_family("xaus.com spot + duty (estimate)"), "estimate")
         self.assertEqual(market_data.source_family("xaus.com"), "spot")
+
+
+class FeedHealthTests(unittest.TestCase):
+    def setUp(self):
+        self._original = market_data._last_live_at
+
+    def tearDown(self):
+        market_data._last_live_at = self._original
+
+    def test_recent_quote_is_not_stale(self):
+        now = datetime.now(timezone.utc)
+        market_data._last_live_at = now - timedelta(minutes=1)
+
+        health = market_data.feed_health(now)
+
+        self.assertFalse(health["stale"])
+        self.assertEqual(health["age_seconds"], 60)
+        self.assertEqual(health["threshold_seconds"], 300)
+
+    def test_feed_down_longer_than_threshold_is_stale(self):
+        now = datetime.now(timezone.utc)
+        market_data._last_live_at = now - timedelta(minutes=6)
+
+        health = market_data.feed_health(now)
+
+        self.assertTrue(health["stale"])
+        self.assertEqual(health["age_seconds"], 360)
+        self.assertIsNotNone(health["last_success_at"])
+
+    def test_never_successful_measures_from_startup(self):
+        market_data._last_live_at = None
+
+        early = market_data.feed_health(market_data._BOOT_AT + timedelta(minutes=2))
+        late = market_data.feed_health(market_data._BOOT_AT + timedelta(minutes=6))
+
+        self.assertFalse(early["stale"])
+        self.assertTrue(late["stale"])
+        self.assertIsNone(late["last_success_at"])
 
 
 if __name__ == "__main__":

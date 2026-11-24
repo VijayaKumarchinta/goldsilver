@@ -11,6 +11,8 @@ class Config:
     TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
     TROY_OUNCE_IN_GRAMS = float(os.getenv("TROY_OUNCE_IN_GRAMS", "31.1035"))
+    # How long a live quote may be missing before the dashboard flags the feed.
+    FEED_STALE_SECONDS = int(os.getenv("FEED_STALE_SECONDS", "300"))
 
     # Legacy FreeAPI / validation bounds restored so the existing unit test suite
     # can still exercise the old validation paths against a known configuration.

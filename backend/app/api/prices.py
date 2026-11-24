@@ -1,6 +1,7 @@
 from decimal import Decimal, ROUND_HALF_UP
 from flask import Blueprint, jsonify
 from app.services.market_data import (
+    feed_health,
     get_latest_snapshot,
     get_open_close_delta,
 )
@@ -46,6 +47,7 @@ def latest():
         "fx": {"USD_INR": usd_inr},
         "market_open": snap["market_open"],
         "captured_at": snap["captured_at"],
+        "feed": feed_health(),
     }), 200
 
 

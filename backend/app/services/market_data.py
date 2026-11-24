@@ -9,6 +9,10 @@ from app.providers import metals_tradingview
 
 log = logging.getLogger(__name__)
 
+# When the feed last produced a usable live quote; drives feed_health().
+_BOOT_AT = datetime.now(timezone.utc)
+_last_live_at: datetime | None = None
+
 
 def source_family(source) -> str:
     """Spot and estimate histories from earlier versions are kept apart from MCX rows."""
@@ -60,6 +64,26 @@ def _live_quote() -> dict | None:
     return {"metals": metals, "fx": quote["fx"]}
 
 
+def feed_health(now: datetime | None = None) -> dict:
+    """How long the market feed has been unable to serve a live quote.
+
+    Measured from the last successful live quote, or from process start when
+    there has not been one yet. ``stale`` turns true after
+    ``Config.FEED_STALE_SECONDS`` (5 minutes by default).
+    """
+    now = now or datetime.now(timezone.utc)
+    last = _last_live_at
+    reference = last or _BOOT_AT
+    age = max(0, int((now - reference).total_seconds()))
+    threshold = Config.FEED_STALE_SECONDS
+    return {
+        "stale": age >= threshold,
+        "last_success_at": last.isoformat() if last else None,
+        "age_seconds": age,
+        "threshold_seconds": threshold,
+    }
+
+
 def _market_open_now() -> bool:
     """True during IST market hours (09:00-23:55 Mon-Fri)."""
     from zoneinfo import ZoneInfo
@@ -80,8 +104,11 @@ def get_latest_snapshot() -> dict:
     updates. If the provider is unreachable the saved readings are returned with
     ``live: False`` and nothing is sent, rather than sending an approximation.
     """
+    global _last_live_at
+
     live = _live_quote()
     if live:
+        _last_live_at = datetime.now(timezone.utc)
         metals_live = {}
         for symbol, metal in live["metals"].items():
             inr_per_gram = metal["inr_per_gram"]

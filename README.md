@@ -30,6 +30,10 @@ and cached for 15 seconds, so the five-second refresh does not hit the provider
 five times. A failed fetch backs off for 60 seconds. Values are exchange futures,
 not local retail quotes, so GST, making charges, and jeweller premiums differ.
 
+If no live quote has been available for `FEED_STALE_SECONDS` (default 300),
+`/api/prices/latest` returns `feed.stale: true` with the last success time and
+the dashboard shows an outage banner. Telegram updates stay paused meanwhile.
+
 ## Telegram updates on Windows
 
 Telegram updates run as a Windows Scheduled Task and do not require the Flask
