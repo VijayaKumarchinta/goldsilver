@@ -5,13 +5,13 @@ from app.extensions import get_db
 import logging
 
 from app.config import Config
-from app.providers import metals_mcx, metals_xaus
+from app.providers import metals_tradingview
 
 log = logging.getLogger(__name__)
 
 
 def source_family(source) -> str:
-    """Prices from different sources must never be mixed in history or open/close."""
+    """Spot and estimate histories from earlier versions are kept apart from MCX rows."""
     s = (source or "").lower()
     if s.startswith("mcx"):
         return "mcx"
@@ -25,22 +25,39 @@ _FAMILY_SQL = {
 }
 
 
-def _usable_mcx(spot: dict) -> dict | None:
-    """MCX prices as {symbol: (inr_per_gram, source, fetched_at, live)}, or None if missing or implausible."""
-    quote = metals_mcx.fetch_mcx()
+def _live_quote() -> dict | None:
+    """Live MCX futures and FX, or None when missing or implausible.
+
+    Every value comes from one provider (TradingView's scanner), so the futures
+    price, the international spot reference and USD/INR always agree with each
+    other. The ratio guard rejects a parsing or unit change before anything is
+    shown or sent.
+    """
+    quote = metals_tradingview.fetch_mcx()
     if not quote:
         return None
-    out = {}
-    for symbol, key, per_gram_divisor in (("XAU", "gold", 10), ("XAG", "silver", 1000)):
-        gram = Decimal(str(quote[key]["price"])) / per_gram_divisor  # gold: per 10 g, silver: per kg
-        spot_gram = Decimal(str(spot["metals"][symbol]["inr_per_gram"]))
+
+    fx = Decimal(str(quote["fx"]))
+    ounce = Decimal(str(Config.TROY_OUNCE_IN_GRAMS))
+    metals = {}
+    for symbol, key, per_gram_divisor, spot_key in (
+        ("XAU", "gold", 10, "XAU"),
+        ("XAG", "silver", 1000, "XAG"),
+    ):
+        gram = Decimal(str(quote[key]["price"])) / per_gram_divisor  # gold per 10 g, silver per kg
+        spot_gram = Decimal(str(quote["spot"][spot_key])) * fx / ounce
         ratio = gram / spot_gram
         if not (Decimal("0.95") <= ratio <= Decimal("1.6")):
             log.warning("MCX %s price rejected: %.2fx the converted spot price", key, ratio)
             return None
-        expiry = quote[key]["expiry"].strftime("%d%b%Y").upper()
-        out[symbol] = (gram, f"MCX {key.upper()} {expiry} futures", quote["fetched_at"], True)
-    return out
+        metals[symbol] = {
+            "inr_per_gram": gram,
+            "source": f"MCX {key.upper()} front-month futures",
+            "updated_at": quote["fetched_at"],
+            "spot_inr_per_10g": spot_gram * Decimal("10"),
+            "usd_per_oz": quote["spot"][spot_key],
+        }
+    return {"metals": metals, "fx": quote["fx"]}
 
 
 def _market_open_now() -> bool:
@@ -57,39 +74,29 @@ def _market_open_now() -> bool:
 
 
 def get_latest_snapshot() -> dict:
-    """Return a single-provider snapshot or the latest saved snapshot.
+    """Live MCX snapshot, or the latest saved snapshot when the feed is down.
 
-    When MCX futures are reachable, the dashboard shows live futures pricing and
-    Telegram posts are sent. When MCX is unreachable (for example Render blocks the
-    request), we still build a snapshot from the xaus.com spot plus the configured
-    estimate premium so the site can keep displaying a useful reference value.
-    Estimates are not marked live and are therefore not sent as MCX Telegram updates.
+    The live path marks both metals ``live`` so the scheduler can post Telegram
+    updates. If the provider is unreachable the saved readings are returned with
+    ``live: False`` and nothing is sent, rather than sending an approximation.
     """
-    provider_snapshot = metals_xaus.fetch_market_data()
-    if provider_snapshot:
-        usd_inr = provider_snapshot["fx_rate"]
-        mcx = _usable_mcx(provider_snapshot)
+    live = _live_quote()
+    if live:
         metals_live = {}
-        for symbol, provider in provider_snapshot["metals"].items():
-            spot_gram = Decimal(str(provider["inr_per_gram"]))
-            if mcx:
-                inr_per_gram, source, updated_at, live = mcx[symbol]
-            else:
-                premium = Config.ESTIMATE_PREMIUM_GOLD if symbol == "XAU" else Config.ESTIMATE_PREMIUM_SILVER
-                inr_per_gram = spot_gram * (Decimal("1") + Decimal(str(premium)))
-                source, updated_at, live = "xaus.com spot + duty (estimate)", provider["updated_at"], False
-            delta = get_open_close_delta(symbol, family=source_family(source))
+        for symbol, metal in live["metals"].items():
+            inr_per_gram = metal["inr_per_gram"]
+            delta = get_open_close_delta(symbol, family=source_family(metal["source"]))
             open_gram = Decimal(str(delta["open"])) or inr_per_gram
             metals_live[symbol] = {
                 "inr_per_gram": float(inr_per_gram),
                 "inr_per_10g": float(inr_per_gram * Decimal("10")),
-                "usd_per_oz": provider["usd_per_oz"],
-                "spot_inr_per_10g": float(spot_gram * Decimal("10")),
+                "usd_per_oz": metal["usd_per_oz"],
+                "spot_inr_per_10g": float(metal["spot_inr_per_10g"]),
                 "open_per_10g": float(open_gram * Decimal("10")),
-                "updated_at": updated_at.isoformat(),
-                "source": source,
-                "live": live,
-                "estimated": not mcx,
+                "updated_at": metal["updated_at"].isoformat(),
+                "source": metal["source"],
+                "live": True,
+                "estimated": False,
             }
         return {
             "captured_at": datetime.now(timezone.utc).isoformat(),
@@ -98,8 +105,8 @@ def get_latest_snapshot() -> dict:
             "market_open": _market_open_now(),
             "metals": metals_live,
             "fx": {
-                "USD_INR": float(usd_inr),
-                "FX_SOURCE": provider_snapshot["fx_source"],
+                "USD_INR": float(live["fx"]),
+                "FX_SOURCE": "TradingView",
             },
         }
 

@@ -66,11 +66,9 @@ def test_local_market_endpoint_is_removed_and_returns_404(client):
     assert resp.status_code == 404
 
 
-def test_mcx_disabled_latest_returns_no_error_field(client, monkeypatch):
-    # The current /prices/latest route always calls the live market-data layer,
-    # so disabling MCX in Config alone is not enough to force a 503 in this
-    # isolated test client without an actual database and scheduler.
-    monkeypatch.setattr(Config, "MCX_ENABLED", False)
+def test_latest_returns_no_error_field_when_provider_is_down(client):
+    # The route always calls the live market-data layer, which falls back to the
+    # last saved snapshot, so the isolated client only checks the response shape.
     resp = client.get("/prices/latest")
     # We only assert that the route responds; the real failure mode for a
     # missing/empty DB is covered better by the integration story.

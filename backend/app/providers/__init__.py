@@ -1,3 +1,3 @@
-from app.providers import metals_xaus
+from app.providers import metals_tradingview
 
-__all__ = ["metals_xaus"]
+__all__ = ["metals_tradingview"]

@@ -55,8 +55,7 @@ const silver = computed(() => prices.value?.silver)
 const feedLive = computed(() => Boolean(gold.value?.live && silver.value?.live))
 const feedStatus = computed(() => {
   if (!prices.value) return loading.value ? 'Connecting to market feed' : 'Market feed unavailable'
-  if (gold.value?.estimated || silver.value?.estimated) return 'MCX unreachable: showing an estimate'
-  return feedLive.value ? 'Live market feed' : 'Showing saved prices'
+  return feedLive.value ? 'Live market feed' : 'Market feed unavailable: showing saved prices'
 })
 const marketStatusText = computed(() => {
   if (!prices.value) return loading.value ? 'Checking market session' : 'Market session unavailable'
@@ -193,7 +192,7 @@ onUnmounted(() => stopAutoRefresh?.())
               <h2>Gold futures · ₹ / 10 g</h2>
             </div>
             <span class="quote-state" :class="{ stale: !gold?.live }">
-              {{ gold?.estimated ? 'Estimate' : gold?.live ? 'Live' : 'Saved' }}
+              {{ gold?.live ? 'Live' : 'Saved' }}
             </span>
           </div>
           <p class="quote-value">{{ gold ? money(gold.close, 0) : '—' }}</p>
@@ -214,7 +213,7 @@ onUnmounted(() => stopAutoRefresh?.())
               <h2>Silver futures · ₹ / 10 g</h2>
             </div>
             <span class="quote-state" :class="{ stale: !silver?.live }">
-              {{ silver?.estimated ? 'Estimate' : silver?.live ? 'Live' : 'Saved' }}
+              {{ silver?.live ? 'Live' : 'Saved' }}
             </span>
           </div>
           <p class="quote-value">{{ silver ? money(silver.close, 0) : '—' }}</p>
@@ -332,9 +331,9 @@ onUnmounted(() => stopAutoRefresh?.())
       <section class="secondary-grid">
         <PurityTable :purity="purity?.purity || []" />
         <p class="pricing-note">
-          Prices are MCX gold and silver futures (nearest contract; silver is quoted per kg and shown per 10 g).
-          They are not local retail quotes: GST, making charges and local premiums are not included. When MCX
-          cannot be reached the dashboard shows an estimate marked "Estimate", and nothing is posted to Telegram.
+          Prices are MCX gold and silver futures (front-month contract; silver is quoted per kg and shown per 10 g).
+          They are not local retail quotes: GST, making charges and local premiums are not included. When the market
+          feed cannot be reached the dashboard shows the last saved reading and nothing is posted to Telegram.
           History is not backfilled: it only holds MCX readings recorded by this app.
         </p>
       </section>
