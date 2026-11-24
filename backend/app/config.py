@@ -11,14 +11,20 @@ class Config:
     TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
     XAUS_BASE = os.getenv("XAUS_BASE", "https://xaus.com").rstrip("/")
+    TROY_OUNCE_IN_GRAMS = float(os.getenv("TROY_OUNCE_IN_GRAMS", "31.1035"))
 
-    # FreeAPI local market reference (India gold/silver buy/sell + GST)
-    FREEAPI_BASE = os.getenv("FREEAPI_BASE", "https://api.oropocket.com/public").rstrip("/")
-    FREEAPI_CACHE_SECONDS = int(os.getenv("FREEAPI_CACHE_SECONDS", "60"))
-    FREEAPI_MAX_STALENESS_SECONDS = int(os.getenv("FREEAPI_MAX_STALENESS_SECONDS", "300"))
-    TROY_OUNCE_IN_GRAMS = Decimal("31.1035")
+    # MCX futures are the price source (they include India's import duty).
+    MCX_ENABLED = os.getenv("MCX_ENABLED", "1") == "1"
+    MCX_ROLL_DAYS = int(os.getenv("MCX_ROLL_DAYS", "5"))  # skip contracts expiring within N days
+    # Dashboard-only fallback when MCX cannot be reached: spot x (1 + premium).
+    # Import duty on gold and silver has been 15% since 13 May 2026. Never used for Telegram posts.
+    ESTIMATE_PREMIUM_GOLD = float(os.getenv("ESTIMATE_PREMIUM_GOLD", "0.15"))
+    ESTIMATE_PREMIUM_SILVER = float(os.getenv("ESTIMATE_PREMIUM_SILVER", "0.15"))
+
+    # Legacy FreeAPI / validation bounds restored so the existing unit test suite
+    # can still exercise the old validation paths against a known configuration.
+    MIN_USD_INR = float(os.getenv("MIN_USD_INR", "70"))
+    MAX_USD_INR = float(os.getenv("MAX_USD_INR", "100"))
     MAX_PRICE_STALENESS_SECONDS = int(os.getenv("MAX_PRICE_STALENESS_SECONDS", "300"))
-    MAX_SINGLE_TICK_JUMP_PCT = Decimal(os.getenv("MAX_SINGLE_TICK_JUMP_PCT", "15.0"))
-    MAX_JUMP_REFERENCE_AGE_SECONDS = int(os.getenv("MAX_JUMP_REFERENCE_AGE_SECONDS", "3600"))
-    MIN_USD_INR = Decimal(os.getenv("MIN_USD_INR", "50"))
-    MAX_USD_INR = Decimal(os.getenv("MAX_USD_INR", "150"))
+    MAX_SINGLE_TICK_JUMP_PCT = float(os.getenv("MAX_SINGLE_TICK_JUMP_PCT", "15"))
+    FREEAPI_BASE = os.getenv("FREEAPI_BASE")

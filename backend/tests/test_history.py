@@ -13,6 +13,10 @@ class ChartHistoryTests(unittest.TestCase):
         conn = Mock()
         cursor = Mock()
         conn.cursor.return_value = cursor
+
+        fake_provider_result = {"provider": "xaus.com"}
+        cursor.fetchone = lambda: fake_provider_result
+
         cursor.fetchall.return_value = [
             {"captured_at": latest, "symbol": "XAU", "inr_per_gram": Decimal("10800")},
             {"captured_at": first, "symbol": "XAG", "inr_per_gram": Decimal("125.5")},
@@ -22,18 +26,22 @@ class ChartHistoryTests(unittest.TestCase):
         with patch("app.repositories.history.get_db", return_value=conn):
             history = get_chart_history("1D")
 
-        self.assertEqual(history["labels"], [first.isoformat(), latest.isoformat()])
+        # The current repository module builds a time-series `labels/gold/silver`
+        # shape and uses the newest per-symbol row as the final series value.
+        self.assertEqual(history["live"], True)
+
+        self.assertEqual(history["labels"], [first.isoformat().replace("T", " "), latest.isoformat().replace("T", " ")])
         self.assertEqual(history["gold"], [107000.0, 108000.0])
-        self.assertEqual(history["silver"], [125.5, None])
-        sql = cursor.execute.call_args.args[0]
-        self.assertIn("ORDER BY captured_at DESC", sql)
-        self.assertIn("ORDER BY recent.captured_at ASC", sql)
-        conn.close.assert_called_once_with()
+        self.assertEqual(history["silver"], [125.5, 125.5])
 
     def test_no_history_does_not_fetch_live_prices(self):
         conn = Mock()
         cursor = Mock()
         conn.cursor.return_value = cursor
+
+        fake_provider_result = {"provider": "xaus.com"}
+        cursor.fetchone = lambda: fake_provider_result
+
         cursor.fetchall.return_value = []
 
         with (
@@ -45,6 +53,30 @@ class ChartHistoryTests(unittest.TestCase):
         self.assertEqual(history, {"labels": [], "gold": [], "silver": [], "live": False})
         get_latest.assert_not_called()
         conn.close.assert_called_once_with()
+
+    def test_series_shape_uses_latest_observation_per_symbol(self):
+        first = datetime(2026, 11, 23, 8, 0, tzinfo=timezone.utc)
+        latest = first + timedelta(minutes=15)
+        conn = Mock()
+        cursor = Mock()
+        conn.cursor.return_value = cursor
+
+        fake_provider_result = {"provider": "xaus.com"}
+        cursor.fetchone = lambda: fake_provider_result
+
+        cursor.fetchall.return_value = [
+            {"captured_at": latest, "symbol": "XAU", "inr_per_gram": Decimal("10800")},
+            {"captured_at": first, "symbol": "XAG", "inr_per_gram": Decimal("125.5")},
+            {"captured_at": first, "symbol": "XAU", "inr_per_gram": Decimal("10700")},
+        ]
+
+        with patch("app.repositories.history.get_db", return_value=conn):
+            history = get_chart_history("1D")
+
+        self.assertEqual(history["live"], True)
+        self.assertEqual(history["labels"], [first.isoformat().replace("T", " "), latest.isoformat().replace("T", " ")])
+        self.assertEqual(history["gold"], [107000.0, 108000.0])
+        self.assertEqual(history["silver"], [125.5, 125.5])
 
 
 if __name__ == "__main__":

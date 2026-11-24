@@ -1,13 +1,11 @@
 import { ref } from 'vue'
 import axios from 'axios'
 
-const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-const isVite = isLocal && (window.location.port === '5174' || window.location.port === '4173' || window.location.port === '5173')
-const API_BASE = isLocal && isVite
-  ? '/api'
-  : window.VITE_API_BASE || (window.location.protocol + '//' + window.location.host + '/api')
+// Same-origin by default: the Vite proxy in development, Flask (or a reverse proxy) in production.
+// Set VITE_API_BASE only if the API lives on a different host.
+const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
-export const api = axios.create({
+const api = axios.create({
   baseURL: API_BASE,
   timeout: 12000,
 })

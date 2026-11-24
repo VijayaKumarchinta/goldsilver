@@ -1,11 +1,12 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import HeaderBar from './components/HeaderBar.vue'
+import NotificationLogs from './components/NotificationLogs.vue'
 import PriceChart from './components/PriceChart.vue'
 import PurityTable from './components/PurityTable.vue'
 import { useApi } from './composables/useApi'
 import { useDashboard } from './composables/useDashboard'
-import { money, parseDateTime } from './utils/format.js'
+import { money } from './utils/format.js'
 
 const { prices, chart, logsData, purity, marketOpen, loading, error, refreshChart, startAutoRefresh } = useApi()
 const dashboard = useDashboard()
@@ -13,7 +14,9 @@ const chartRange = ref('1D')
 let stopAutoRefresh = null
 
 function parseDate(value) {
-  return parseDateTime(value)
+  if (!value) return null
+  const date = new Date(String(value).replace(' ', 'T'))
+  return Number.isNaN(date.getTime()) ? null : date
 }
 
 function formatDateTime(value) {
@@ -52,14 +55,15 @@ const silver = computed(() => prices.value?.silver)
 const feedLive = computed(() => Boolean(gold.value?.live && silver.value?.live))
 const feedStatus = computed(() => {
   if (!prices.value) return loading.value ? 'Connecting to market feed' : 'Market feed unavailable'
-  return feedLive.value ? 'Live market feed' : 'Showing last available prices'
+  if (gold.value?.estimated || silver.value?.estimated) return 'MCX unreachable: showing an estimate'
+  return feedLive.value ? 'Live market feed' : 'Showing saved prices'
 })
 const marketStatusText = computed(() => {
   if (!prices.value) return loading.value ? 'Checking market session' : 'Market session unavailable'
   return marketOpen.value ? 'Market session open' : 'Market session closed'
 })
 const lastUpdate = computed(() => {
-  const date = parseDate(prices.value?.gold?.updated_at || prices.value?.captured_at)
+  const date = parseDate(prices.value?.captured_at)
   if (!date) return '—'
   return date.toLocaleTimeString('en-IN', {
     hour: '2-digit',
@@ -68,7 +72,7 @@ const lastUpdate = computed(() => {
     hour12: true,
   }) + ' IST'
 })
-const providerName = computed(() => gold.value?.source?.toUpperCase() || 'XAUS')
+const providerName = computed(() => gold.value?.source?.toUpperCase() || 'MCX')
 const usdInr = computed(() => {
   const rate = Number(prices.value?.fx?.USD_INR)
   return Number.isFinite(rate) && rate > 0 ? rate.toFixed(4) : '—'
@@ -142,7 +146,7 @@ onUnmounted(() => stopAutoRefresh?.())
         <div>
           <p class="dashboard-eyebrow">MARKET MONITOR · INDIA</p>
           <h1>Gold and silver, clearly.</h1>
-          <p class="dashboard-lede">Global spot prices converted to INR, not Hyderabad retail quotes. All times shown in IST.</p>
+          <p class="dashboard-lede">MCX gold and silver futures, with international spot and USD/INR for reference. All times shown in IST.</p>
         </div>
         <div class="feed-summary" :class="{ 'feed-summary-stale': !feedLive }" role="status">
           <span class="feed-light" aria-hidden="true"></span>
@@ -151,8 +155,8 @@ onUnmounted(() => stopAutoRefresh?.())
             <span>{{ providerName }} · dashboard refreshes every 5 seconds</span>
           </div>
           <div class="feed-summary-time">
-            <span>Provider quote time</span>
-            <strong>{{ formatDateTime(gold?.updated_at || silver?.updated_at) }}</strong>
+            <span>Last checked</span>
+            <strong>{{ formatDateTime(prices?.captured_at) }}</strong>
           </div>
         </div>
       </section>
@@ -164,8 +168,8 @@ onUnmounted(() => stopAutoRefresh?.())
 
       <section class="market-strip" aria-label="Market data status">
         <div class="strip-item">
-          <span>Spot source</span>
-          <strong>{{ providerName }} · combined metals + FX</strong>
+          <span>Price source</span>
+          <strong>{{ providerName }}</strong>
         </div>
         <div class="strip-item">
           <span>USD / INR</span>
@@ -181,15 +185,15 @@ onUnmounted(() => stopAutoRefresh?.())
         </div>
       </section>
 
-      <section class="quote-grid" aria-label="Current spot prices">
+      <section class="quote-grid" aria-label="Current MCX prices">
         <article class="quote-card gold-quote">
           <div class="quote-heading">
             <div>
               <span class="quote-symbol">XAU · GOLD</span>
-              <h2>24K spot · ₹ / 10 g</h2>
+              <h2>Gold futures · ₹ / 10 g</h2>
             </div>
             <span class="quote-state" :class="{ stale: !gold?.live }">
-              {{ gold?.live ? 'Live' : 'Last available' }}
+              {{ gold?.estimated ? 'Estimate' : gold?.live ? 'Live' : 'Saved' }}
             </span>
           </div>
           <p class="quote-value">{{ gold ? money(gold.close, 0) : '—' }}</p>
@@ -197,7 +201,6 @@ onUnmounted(() => stopAutoRefresh?.())
             <span>{{ gold ? `${money(gold.inr_per_gram, 2)} / g` : '₹ — / g' }}</span>
             <span>{{ gold?.usd_per_oz ? `$${Number(gold.usd_per_oz).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / oz` : 'USD — / oz' }}</span>
           </div>
-          <div class="quote-timestamp">Provider quote {{ formatDateTime(gold?.updated_at) }}</div>
           <div class="quote-change" :class="changeClass(gold)">
             <span>Session movement</span>
             <strong>{{ changeLabel(gold) }}</strong>
@@ -208,10 +211,10 @@ onUnmounted(() => stopAutoRefresh?.())
           <div class="quote-heading">
             <div>
               <span class="quote-symbol">XAG · SILVER</span>
-              <h2>999 spot · ₹ / 10 g</h2>
+              <h2>Silver futures · ₹ / 10 g</h2>
             </div>
             <span class="quote-state" :class="{ stale: !silver?.live }">
-              {{ silver?.live ? 'Live' : 'Last available' }}
+              {{ silver?.estimated ? 'Estimate' : silver?.live ? 'Live' : 'Saved' }}
             </span>
           </div>
           <p class="quote-value">{{ silver ? money(silver.close, 0) : '—' }}</p>
@@ -219,7 +222,6 @@ onUnmounted(() => stopAutoRefresh?.())
             <span>{{ silver ? `${money(silver.inr_per_gram, 2)} / g` : '₹ — / g' }}</span>
             <span>{{ silver?.usd_per_oz ? `$${Number(silver.usd_per_oz).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / oz` : 'USD — / oz' }}</span>
           </div>
-          <div class="quote-timestamp">Provider quote {{ formatDateTime(silver?.updated_at) }}</div>
           <div class="quote-change" :class="changeClass(silver)">
             <span>Session movement</span>
             <strong>{{ changeLabel(silver) }}</strong>
@@ -245,7 +247,7 @@ onUnmounted(() => stopAutoRefresh?.())
           <p class="sr-only" aria-live="polite">{{ chartSummary }}</p>
           <div class="chart-area" role="img" aria-label="Gold and silver saved price history" :aria-describedby="chartRows.length ? undefined : 'history-empty'">
             <PriceChart
-              v-if="chartRows.length"
+              v-if="chart?.labels?.length"
               :labels="chart.labels"
               :gold-data="chart.gold"
               :silver-data="chart.silver"
@@ -323,14 +325,17 @@ onUnmounted(() => stopAutoRefresh?.())
             <p class="delivery-note">Backend startup checks the saved timer and sends only when due. Missed intervals are not replayed as a flood.</p>
           </section>
 
+          <NotificationLogs :logs="logsData?.logs || []" :source="logsData?.source" />
         </aside>
       </section>
 
       <section class="secondary-grid">
         <PurityTable :purity="purity?.purity || []" />
         <p class="pricing-note">
-          These purity estimates and spot prices use Xaus global data, not a city retail quote. GST treatment is not specified by that provider, and the rates are not guaranteed retail quotes.
-          Historical values are not backfilled: if no snapshot was saved, the dashboard shows a gap rather than inventing a price.
+          Prices are MCX gold and silver futures (nearest contract; silver is quoted per kg and shown per 10 g).
+          They are not local retail quotes: GST, making charges and local premiums are not included. When MCX
+          cannot be reached the dashboard shows an estimate marked "Estimate", and nothing is posted to Telegram.
+          History is not backfilled: it only holds MCX readings recorded by this app.
         </p>
       </section>
     </main>
@@ -487,7 +492,6 @@ onUnmounted(() => stopAutoRefresh?.())
 }
 
 .quote-details { display: flex; flex-wrap: wrap; gap: 8px 18px; min-height: 18px; color: var(--ink-2); font-size: 12px; }
-.quote-timestamp { margin-top: 7px; color: var(--mute); font-size: 10px; }
 .quote-change { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; margin-top: auto; padding-top: 11px; border-top: 1px solid var(--line); font-size: 11px; }
 .quote-change span { color: var(--mute); }
 .quote-change strong { font-size: 11px; text-align: right; }
@@ -543,6 +547,8 @@ onUnmounted(() => stopAutoRefresh?.())
 .delivery-facts dt { color: var(--mute); font-size: 10px; }
 .delivery-facts dd { margin: 0; color: var(--ink); font-size: 12px; font-weight: 650; }
 .delivery-note { margin: 10px 0 0; color: var(--mute); font-size: 10px; line-height: 1.5; }
+.delivery-column :deep(.panel) { min-width: 0; }
+
 .secondary-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(250px, .8fr); gap: 16px; align-items: start; }
 .pricing-note { margin: 0; padding: 16px 2px; color: var(--mute); font-size: 11px; line-height: 1.7; }
 

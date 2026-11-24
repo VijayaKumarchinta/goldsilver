@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { money, parseDateTime } from '../utils/format.js'
+import { money } from '../utils/format.js'
 
 const props = defineProps({
   metal: { type: String, required: true },
@@ -46,14 +46,16 @@ const subValue = computed(() => {
 })
 
 const updatedAtDisplay = computed(() => {
-  const date = parseDateTime(props.providerUpdatedAt)
-  if (!date) return '—'
-  return date.toLocaleTimeString('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
+  try {
+    return new Date(props.providerUpdatedAt).toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+  } catch {
+    return props.providerUpdatedAt
+  }
 })
 
 const metricIcon = computed(() => {

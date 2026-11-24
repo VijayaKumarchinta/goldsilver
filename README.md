@@ -1,204 +1,62 @@
-# Gold & Silver Price Bot
+# Gold and Silver Price Bot
 
-A real-time gold and silver price tracking dashboard with Telegram notifications. Built with Flask backend + Vue 3 frontend.
+## Where the prices come from
+Prices are **MCX gold and silver futures** (nearest contract; gold per 10 g, silver per kg shown per 10 g), read from
+MCX's public market-watch page. International spot (xaus.com) and USD/INR are shown only as a reference.
+The old version converted international spot to rupees, which left out India's 15% import duty (since 13 May 2026)
+and was 14-20% below MCX. If MCX cannot be reached the dashboard shows a value marked "Estimate"; nothing is saved
+or sent to Telegram in that case.
 
-## Features
+Check the MCX connection from the machine that runs the bot:
 
-- **Live Price Dashboard** - Real-time gold (XAU) and silver (XAG) prices in INR
-- **Price Chart** - Historical price chart with 1D, 7D, 30D ranges
-- **Purity Calculator** - Gold prices by purity (24K, 22K, 18K) and silver 999
-- **Telegram Notifications** - Scheduled price updates via Telegram bot
-- **Schedule Panel** - View and manage notification schedules
-- **Notification Logs** - Track sent notifications
+    cd backend && python -m app.providers.metals_mcx
 
-## Tech Stack
+MCX sits behind a bot filter and often blocks cloud/datacentre IP addresses, so this may work on a home PC and
+fail on Render or other hosts. This reads a public website; it is not a licensed MCX data feed.
 
-- **Backend**: Flask, Flask-SocketIO, APScheduler, SQLAlchemy, psycopg2
-- **Frontend**: Vue 3, Vite, Vue Router, ECharts
-- **Database**: PostgreSQL
-- **Deployment**: Render (web service + PostgreSQL)
+## Running on a server (Render and similar)
+- Build: `pip install -r backend/requirements.txt && cd frontend && npm ci && npm run build`
+- Start: `cd backend && gunicorn -w 1 --threads 8 -b 0.0.0.0:$PORT run:app` (one worker only: it runs the scheduler)
+- Flask serves the built dashboard from `frontend/dist`, so no separate frontend host is needed.
+- Free web services sleep when idle, which stops the in-process scheduler and the Telegram posts. Use an always-on plan.
 
-## Project Structure
+## Market data
 
-```
-global-gold-silver-bot/
-├── backend/
-│   ├── app/
-│   │   ├── api/           # API endpoints
-│   │   ├── extensions.py  # Database connection
-│   │   ├── messaging/     # Telegram notifications
-│   │   ├── providers/     # Price data providers
-│   │   ├── repositories/  # Database operations
-│   │   ├── scheduler/     # Background jobs
-│   │   ├── services/      # Business logic
-│   │   └── sockets/       # WebSocket handlers
-│   ├── database/
-│   │   └── schema.sql     # Database schema
-│   ├── tests/             # Test suite
-│   ├── requirements.txt   # Python dependencies
-│   ├── run.py            # App entry point
-│   └── render.yaml       # Render deployment config
-├── frontend/
-│   ├── src/
-│   │   ├── components/   # Vue components
-│   │   ├── composables/  # Vue composables
-│   │   ├── utils/        # Utility functions
-│   │   ├── App.vue       # Main app component
-│   │   └── main.js       # App entry point
-│   ├── index.html        # HTML template
-│   └── vite.config.js    # Vite config
-├── .env.example          # Environment variables template
-├── .gitignore
-└── README.md            # This file
+The dashboard refreshes its backend data every five seconds. Gold, silver, and
+USD/INR are read together from the Xaus spot endpoint; the five-second refresh
+does not guarantee that the provider publishes a new quote every five seconds.
+Values are global spot references, not local retail quotes, so local taxes,
+premiums, and jeweller charges can differ.
+
+## Telegram updates on Windows
+
+Telegram updates run as a Windows Scheduled Task and do not require the Flask
+backend or Vue frontend to be running. Install the backend requirements and
+configure `DATABASE_URL`, `TELEGRAM_BOT_TOKEN`, and at least one enabled
+Telegram destination (via `TELEGRAM_CHAT_ID` or the database) in the root `.env`
+file.
+
+From PowerShell in this project folder, register the task once:
+
+```powershell
+.\install_hourly_task.ps1
 ```
 
-## Getting Started
+If you use a virtual environment, pass its Python executable:
 
-### Prerequisites
-
-- Python 3.11+
-- Node.js 18+
-- PostgreSQL database
-- Telegram bot token (for notifications)
-
-### Local Development
-
-**Backend:**
-
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+```powershell
+.\install_hourly_task.ps1 -PythonPath ".\backend\.venv\Scripts\python.exe"
 ```
 
-Create a `.env` file in the project root:
+The task checks every five minutes and sends when a 30-minute update is due.
+On backend startup, the saved send time is checked; an update is sent only if
+the 30-minute interval has elapsed. The standalone task keeps updates running
+without Flask or Vue. After downtime, the system sends one catch-up update
+rather than replaying every missed interval. Historical data contains only
+snapshots that were actually captured; a quote from an hour when the computer
+was off cannot be reconstructed.
 
-```env
-DATABASE_URL=postgresql://user:password@localhost:5432/goldbot
-SECRET_KEY=your-secret-key
-TELEGRAM_BOT_TOKEN=your-bot-token
-TELEGRAM_CHAT_ID=your-chat-id
-```
-
-Run migrations (if needed) and start the server:
-
-```bash
-python run.py
-```
-
-The backend runs on `http://localhost:5000`.
-
-**Frontend:**
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-The frontend runs on `http://localhost:5173` (or similar).
-
-### API Endpoints
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /api/health` | Health check |
-| `GET /api/prices/latest` | Current gold/silver prices |
-| `GET /api/prices/chart/<range>` | Historical chart data (1D, 7D, 30D) |
-| `GET /api/prices/delta/XAU` | Gold open/close delta |
-| `GET /api/prices/delta/XAG` | Silver open/close delta |
-| `GET /api/prices/purity` | Gold by purity + silver |
-| `GET /api/prices/states` | List of Indian cities for local reference |
-| `GET /api/prices/local-market` | FreeAPI India-wide gold/silver rates |
-| `GET /api/prices/schedule` | Notification schedules |
-| `GET /api/prices/destinations` | Telegram destinations |
-| `GET /api/logs` | Notification logs |
-
-## Deployment to Render
-
-### 1. Create Telegram Bot
-
-- Open Telegram, search for `@BotFather`
-- Send `/newbot` and follow prompts
-- Save the bot token
-
-### 2. Get Your Chat ID
-
-- Open your new bot in Telegram
-- Send `/start`
-- Visit `https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates` in browser
-- Find your chat ID in the response (e.g., `-1001234567890`)
-
-### 3. Push to GitHub
-
-```bash
-git add .
-git commit -m "Prepare for deployment"
-git push origin main
-```
-
-### 4. Create PostgreSQL on Render
-
-- Go to [render.com](https://render.com) → Dashboard → New → PostgreSQL
-- Choose free tier
-- Note the database name
-
-### 5. Deploy Web Service
-
-- Go to Render → New → Web Service
-- Connect your GitHub repo
-- Configure:
-  - **Name**: `gold-silver-bot`
-  - **Root Directory**: `backend`
-  - **Runtime**: Python 3
-  - **Build Command**: `pip install -r requirements.txt`
-  - **Start Command**: `python run.py`
-  - **Plan**: Free
-
-### 6. Add Environment Variables
-
-In Render dashboard for your service:
-
-| Key | Value |
-|-----|-------|
-| `DATABASE_URL` | Auto-filled from PostgreSQL |
-| `SECRET_KEY` | Generate random string |
-| `TELEGRAM_BOT_TOKEN` | Your bot token |
-| `TELEGRAM_CHAT_ID` | Your chat ID |
-| `FLASK_ENV` | `production` |
-
-### 7. Verify
-
-- Visit your Render URL
-- Check `/api/health` returns `{"status": "ok"}`
-- Frontend should load and show prices
-
-## Configuration
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | Required |
-| `SECRET_KEY` | Flask secret key | Required |
-| `TELEGRAM_BOT_TOKEN` | Telegram bot token | Optional |
-| `TELEGRAM_CHAT_ID` | Target chat ID | Optional |
-| `XAUS_BASE` | Xaus API base URL | `https://xaus.com` |
-| `FREEAPI_BASE` | FreeAPI base URL | `https://api.oropocket.com/public` |
-| `MAX_PRICE_STALENESS_SECONDS` | Max age for fresh prices | `300` |
-| `MAX_SINGLE_TICK_JUMP_PCT` | Max single-tick price jump % | `15.0` |
-| `MAX_JUMP_REFERENCE_AGE_SECONDS` | Max age for jump reference | `3600` |
-| `MIN_USD_INR` | Minimum USD/INR rate | `50` |
-| `MAX_USD_INR` | Maximum USD/INR rate | `150` |
-
-## Notifications
-
-Telegram notifications are sent on schedule:
-- **Market Open**: 09:00 IST, Mon-Fri
-- **Market Close**: 23:55 IST, Mon-Thu
-- **Weekly Close**: 23:55 IST, Fri
-
-Notifications include gold/silver prices, 24h changes, and purity prices.
-
-## License
-
-MIT
+The task runs under your Windows account, so the computer must be on and you
+must be signed in. Windows can start a missed run when it becomes available
+again. PostgreSQL must be reachable, and the machine needs internet access for
+the price provider and Telegram.

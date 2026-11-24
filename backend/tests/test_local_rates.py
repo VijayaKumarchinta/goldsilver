@@ -22,15 +22,15 @@ class TestLocalRates:
         local_rates._cache.clear()
 
     def test_is_configured_returns_true_when_base_set(self, monkeypatch):
-        monkeypatch.setattr(Config, "FREEAPI_BASE", "https://api.oropocket.com/public")
+        monkeypatch.setattr(Config, "FREEAPI_BASE", "https://api.oropocket.com/public", raising=False)
         assert local_rates.is_configured() is True
 
     def test_is_configured_returns_false_when_base_empty(self, monkeypatch):
-        monkeypatch.setattr(Config, "FREEAPI_BASE", "")
+        monkeypatch.setattr(Config, "FREEAPI_BASE", "", raising=False)
         assert local_rates.is_configured() is False
 
     def test_get_local_market_reference_returns_parsed_rates(self, monkeypatch):
-        monkeypatch.setattr(Config, "FREEAPI_BASE", "https://example.test")
+        monkeypatch.setattr(Config, "FREEAPI_BASE", "https://example.test", raising=False)
 
         def fake_get(url, timeout):
             assert url == "https://example.test/prices"
@@ -74,7 +74,7 @@ class TestLocalRates:
         assert result["silver"]["change24h"] == {"buy": -0.08, "sell": -0.05}
 
     def test_get_local_market_reference_passes_city_to_result(self, monkeypatch):
-        monkeypatch.setattr(Config, "FREEAPI_BASE", "https://example.test")
+        monkeypatch.setattr(Config, "FREEAPI_BASE", "https://example.test", raising=False)
 
         def fake_get(url, timeout):
             return FakeResponse(200, {
@@ -91,7 +91,7 @@ class TestLocalRates:
         assert result["city"] == "Mumbai"
 
     def test_get_local_market_reference_uses_india_when_no_city(self, monkeypatch):
-        monkeypatch.setattr(Config, "FREEAPI_BASE", "https://example.test")
+        monkeypatch.setattr(Config, "FREEAPI_BASE", "https://example.test", raising=False)
 
         def fake_get(url, timeout):
             return FakeResponse(200, {
@@ -108,7 +108,7 @@ class TestLocalRates:
         assert result["city"] == "India"
 
     def test_get_local_market_reference_raises_on_non_200(self, monkeypatch):
-        monkeypatch.setattr(Config, "FREEAPI_BASE", "https://example.test")
+        monkeypatch.setattr(Config, "FREEAPI_BASE", "https://example.test", raising=False)
 
         def fake_get(url, timeout):
             return FakeResponse(500, {"error": "server error"})
@@ -118,7 +118,7 @@ class TestLocalRates:
             local_rates.get_local_market_reference()
 
     def test_get_local_market_reference_raises_on_non_200_status_code(self, monkeypatch):
-        monkeypatch.setattr(Config, "FREEAPI_BASE", "https://example.test")
+        monkeypatch.setattr(Config, "FREEAPI_BASE", "https://example.test", raising=False)
 
         def fake_get(url, timeout):
             return FakeResponse(200, {"statusCode": 400, "message": "bad request"})
@@ -128,7 +128,7 @@ class TestLocalRates:
             local_rates.get_local_market_reference()
 
     def test_get_local_market_reference_rejects_missing_data(self, monkeypatch):
-        monkeypatch.setattr(Config, "FREEAPI_BASE", "https://example.test")
+        monkeypatch.setattr(Config, "FREEAPI_BASE", "https://example.test", raising=False)
 
         def fake_get(url, timeout):
             return FakeResponse(200, {"statusCode": 200, "data": {}})
@@ -138,7 +138,7 @@ class TestLocalRates:
             local_rates.get_local_market_reference()
 
     def test_get_local_market_reference_rejects_bad_payload_shape(self, monkeypatch):
-        monkeypatch.setattr(Config, "FREEAPI_BASE", "https://example.test")
+        monkeypatch.setattr(Config, "FREEAPI_BASE", "https://example.test", raising=False)
 
         def fake_get(url, timeout):
             return FakeResponse(200, {"statusCode": 200})
@@ -147,7 +147,12 @@ class TestLocalRates:
         with pytest.raises(local_rates.LocalRatesProviderError, match="unexpected payload shape"):
             local_rates.get_local_market_reference()
 
+    def _set_freeapi_base(self, monkeypatch, base):
+        monkeypatch.setattr(Config, "FREEAPI_BASE", base, raising=False)
+
     def test_list_states_returns_all_cities_without_query(self):
+        self._set_freeapi_base(pytest.MonkeyPatch(), "https://api.oropocket.com/public")
+
         states = local_rates.list_states()
         assert "Delhi" in states
         assert "Mumbai" in states
@@ -155,17 +160,21 @@ class TestLocalRates:
         assert len(states) > 20
 
     def test_search_returns_filtered_cities(self):
+        self._set_freeapi_base(pytest.MonkeyPatch(), "https://api.oropocket.com/public")
+
         states = local_rates.list_states("Del")
         assert "Delhi" in states
         assert "New Delhi" in states
         assert "Mumbai" not in states
 
     def test_search_returns_empty_list_for_no_matches(self):
+        self._set_freeapi_base(pytest.MonkeyPatch(), "https://api.oropocket.com/public")
+
         states = local_rates.list_states("XyzCity")
         assert states == []
 
     def test_local_market_reference_requires_freeapi_base(self, monkeypatch):
-        monkeypatch.setattr(Config, "FREEAPI_BASE", "https://invalid.test")
+        monkeypatch.setattr(Config, "FREEAPI_BASE", "https://invalid.test", raising=False)
 
         def fake_get(url, timeout):
             from requests.exceptions import ConnectionError

@@ -1,6 +1,6 @@
 import logging
-import os
-from flask import Flask
+from pathlib import Path
+from flask import Flask, abort, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from app.config import Config
@@ -38,19 +38,19 @@ def create_app(start_sched: bool = True):
     app.register_blueprint(prices_bp, url_prefix="/api/prices")
     app.register_blueprint(logs_bp, url_prefix="/api/logs")
 
-    # Serve the Vue frontend static files at the root URL
-    app.config["STATIC_FOLDER"] = os.path.join(os.path.dirname(__file__), "..", "static")
-    @app.route("/")
-    @app.route("/<path:filename>")
-    def serve_frontend(filename="index.html"):
-        from flask import send_from_directory
-        static_dir = app.config["STATIC_FOLDER"]
-        if filename == "index.html" or not filename:
-            return send_from_directory(static_dir, "index.html")
-        return send_from_directory(static_dir, filename)
+    # Serve the built dashboard (frontend/dist) from the same origin when it exists.
+    dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    if dist.is_dir():
+        @app.route("/", defaults={"path": ""})
+        @app.route("/<path:path>")
+        def dashboard(path):
+            if path.startswith(("api/", "socket.io")):
+                abort(404)
+            if path and (dist / path).is_file():
+                return send_from_directory(dist, path)
+            return send_from_directory(dist, "index.html")
 
-    # Initialize DB tables on first connection, then ensure the Telegram destination exists
-    from app.repositories.destinations import ensure_telegram_destination
+    # Ensure the Telegram destination exists from TELEGRAM_CHAT_ID
     ensure_telegram_destination()
 
     # Real-time price push

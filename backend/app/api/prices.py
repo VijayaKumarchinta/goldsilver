@@ -1,13 +1,11 @@
 from decimal import Decimal, ROUND_HALF_UP
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify
 from app.services.market_data import (
     get_latest_snapshot,
     get_open_close_delta,
 )
 from app.repositories.history import get_chart_history
-from app.services.rates import purity_rows
-from app.services import local_rates
-from app.config import Config
+from app.services.rates import purity_rows, state_rows
 
 prices_bp = Blueprint("prices", __name__)
 
@@ -31,6 +29,8 @@ def latest():
             "updated_at": gold["updated_at"],
             "source": gold["source"],
             "live": gold["live"],
+            "estimated": gold.get("estimated", False),
+            "spot_inr_per_10g": gold.get("spot_inr_per_10g"),
         },
         "silver": {
             "open": silver["open_per_10g"],
@@ -40,9 +40,10 @@ def latest():
             "updated_at": silver["updated_at"],
             "source": silver["source"],
             "live": silver["live"],
+            "estimated": silver.get("estimated", False),
+            "spot_inr_per_10g": silver.get("spot_inr_per_10g"),
         },
         "fx": {"USD_INR": usd_inr},
-        "quote_type": "global_spot",
         "market_open": snap["market_open"],
         "captured_at": snap["captured_at"],
     }), 200
@@ -64,14 +65,9 @@ def delta(metal):
     if metal not in ("XAU", "XAG"):
         return jsonify({"error": "invalid metal"}), 400
     name = "Gold" if metal == "XAU" else "Silver"
-    snapshot = get_latest_snapshot()
-    quote = snapshot["metals"].get(metal, {})
-    if not quote:
-        return jsonify({"error": "No current or saved market prices are available"}), 503
-    d = get_open_close_delta(metal, current_close=quote.get("inr_per_gram"))
+    d = get_open_close_delta(metal)
     d["name"] = name
     d["metal"] = metal
-    d["quote_type"] = "global_spot"
     return jsonify(d), 200
 
 
@@ -80,54 +76,27 @@ def delta(metal):
 def purity():
     """Gold by purity: 24K, 22K, 18K, and Silver 999."""
     snap = get_latest_snapshot()
-    gold = snap["metals"].get("XAU", {})
-    silver = snap["metals"].get("XAG", {})
-    if not gold or not silver:
-        return jsonify({"error": "No current or saved market prices are available"}), 503
-    gold_10g = Decimal(str(gold["inr_per_10g"]))
-    silver_10g = Decimal(str(silver["inr_per_10g"]))
+    gold_10g = Decimal(snap["metals"]["XAU"]["inr_per_10g"])
+    silver_10g = Decimal(snap["metals"]["XAG"]["inr_per_10g"])
     return jsonify({
         "purity": purity_rows(gold_10g, silver_10g),
         "gold_24k_per_10g": str(gold_10g.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
         "silver_per_10g": str(silver_10g.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
-        "quote_type": "global_spot",
     }), 200
 
 
 @prices_bp.route("/states", methods=["GET"])
 @prices_bp.route("/states/", methods=["GET"])
 def states():
-    """Return searchable Indian cities for local market reference.
-
-    FreeAPI provides India-wide rates, not city-specific quotes.
-    This returns the list of major cities for display/search purposes.
-    """
+    """Rates by state with local premiums."""
+    snap = get_latest_snapshot()
+    gold_10g = Decimal(snap["metals"]["XAU"]["inr_per_10g"])
+    silver_10g = Decimal(snap["metals"]["XAG"]["inr_per_10g"])
     return jsonify({
-        "provider": "FreeAPI",
-        "local_rates_available": bool(local_rates.is_configured()),
-        "states": local_rates.list_states(request.args.get("q", "")),
-        "message": (
-            "Local market reference is India-wide from FreeAPI, not city-specific. "
-            "GST treatment is indicative. Rates are tradeable references, not guaranteed retail quotes."
-        ),
+        "states": state_rows(gold_10g, silver_10g),
+        "gold_24k_per_10g": str(gold_10g.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+        "silver_per_10g": str(silver_10g.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
     }), 200
-
-
-@prices_bp.route("/local-market", methods=["GET"])
-def local_market():
-    """Current local market gold and silver reference from FreeAPI.
-
-    Returns tradeable buy/sell rates in INR per gram with GST and 24h changes.
-    Query param `city` is optional and informational only; FreeAPI returns India-wide rates.
-    """
-    if not Config.FREEAPI_BASE:
-        return jsonify({"error": "FreeAPI is not configured"}), 503
-    city = request.args.get("city", "India")
-    try:
-        quote = local_rates.get_local_market_reference(city)
-    except local_rates.LocalRatesProviderError as exc:
-        return jsonify({"error": str(exc)}), 502
-    return jsonify(quote), 200
 
 
 @prices_bp.route("/schedule", methods=["GET"])

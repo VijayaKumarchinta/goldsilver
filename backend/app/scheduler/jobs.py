@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 
 from app.config import Config
@@ -12,9 +13,26 @@ from app.services.notification_dispatcher import (
     get_notification_status,
     has_scheduled_slot,
 )
-from app.services.validation import validate_snapshot_for_persistence
 
 log = logging.getLogger(__name__)
+
+
+NOTIFY_EVENTS = {"market_open", "market_close", "weekly_close"}
+
+
+def _all_live(snap: dict) -> bool:
+    return all(snap.get("metals", {}).get(s, {}).get("live") for s in ("XAU", "XAG"))
+
+
+def _wait_for_live_prices(event_type: str):
+    """Scheduled posts retry for about 3 minutes, then are skipped. An estimate is never sent."""
+    for attempt in range(3):
+        time.sleep(60)
+        snap = get_latest_snapshot()
+        if _all_live(snap):
+            return snap
+        log.warning("%s: live MCX prices still unavailable (retry %s/3)", event_type, attempt + 1)
+    return None
 
 
 def scheduled_capture(event_type: str):
@@ -24,11 +42,11 @@ def scheduled_capture(event_type: str):
     log.info("Scheduler fired: %s", event_type)
     try:
         snap = get_latest_snapshot()
-        try:
-            validate_snapshot_for_persistence(snap)
-        except ValueError as exc:
-            log.warning("Skipping %s snapshot because market data is invalid: %s", event_type, exc)
-            return {"saved": False, "reason": "invalid_market_data"}
+        if not _all_live(snap):
+            snap = _wait_for_live_prices(event_type) if event_type in NOTIFY_EVENTS else None
+            if snap is None:
+                log.error("%s skipped: live MCX prices are unavailable, so nothing was saved or sent", event_type)
+                return
         snapshot_id = save_snapshot(snap, event_type=event_type)
         if event_type in {"market_open", "market_close", "weekly_close"}:
             created = create_jobs(snapshot_id, event_type)
@@ -73,12 +91,11 @@ def scheduled_periodic_update():
             return {"due": False, "reason": "interval_already_processed"}
 
         snapshot = get_latest_snapshot()
-        try:
-            validate_snapshot_for_persistence(snapshot)
-        except ValueError as exc:
-            raise RuntimeError(
-                f"Telegram update skipped because live market data is unavailable: {exc}"
-            ) from exc
+        if not all(
+            snapshot.get("metals", {}).get(symbol, {}).get("live")
+            for symbol in ("XAU", "XAG")
+        ):
+            raise RuntimeError("Telegram update skipped because live market data is unavailable")
 
         snapshot_id = save_snapshot(snapshot, event_type="periodic_update")
         created = create_jobs(snapshot_id, "periodic_update", scheduled_for=scheduled_for)

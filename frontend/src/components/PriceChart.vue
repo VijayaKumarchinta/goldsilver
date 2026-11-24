@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onMounted, onUnmounted, watch, ref } from 'vue'
-import { parseDateTime } from '../utils/format.js'
 const props = defineProps({
   labels: { type: Array, default: () => [] },
   goldData: { type: Array, default: () => [] },
@@ -26,34 +25,23 @@ function buildOption() {
 
   const goldSeries = props.goldData.map((v, i) => [props.labels[i] || '', v])
   const silverSeries = props.silverData.map((v, i) => [props.labels[i] || '', v])
-  const goldValues = goldSeries
-    .map((point) => point[1])
-    .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
-    .map(Number)
-  const silverValues = silverSeries
-    .map((point) => point[1])
-    .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
-    .map(Number)
 
-  if (!goldValues.length && !silverValues.length) {
+  if (!goldSeries.length) {
     return null
   }
 
-  function axisRange(values, step, minimumRange) {
-    if (!values.length) return [0, step]
-    const low = Math.min(...values)
-    const high = Math.max(...values)
-    const padding = Math.max(high - low, minimumRange) * 0.05
-    const min = Math.floor((low - padding) / step) * step
-    const max = Math.ceil((high + padding) / step) * step
-    return [min, max > min ? max : min + step]
+  const maxGold = Math.max(...goldSeries.map((d) => d[1]), 10000)
+  const minGold = Math.min(...goldSeries.map((d) => d[1]), 0)
+  const maxSilver = Math.max(...silverSeries.map((d) => d[1]), 100)
+  const minSilver = Math.min(...silverSeries.map((d) => d[1]), 0)
+
+  function parseDate(value) {
+    const date = new Date(String(value).replace(' ', 'T'))
+    return Number.isNaN(date.getTime()) ? null : date
   }
 
-  const [minGold, maxGold] = axisRange(goldValues, 500, 500)
-  const [minSilver, maxSilver] = axisRange(silverValues, 1, 1)
-
   function formatTime(value) {
-    const date = parseDateTime(value)
+    const date = parseDate(value)
     if (!date) return value
     return date.toLocaleTimeString('en-IN', {
       hour: '2-digit',
@@ -64,7 +52,7 @@ function buildOption() {
   }
 
   function formatDateTime(value) {
-    const date = parseDateTime(value)
+    const date = parseDate(value)
     if (!date) return value
     return date.toLocaleString('en-IN', {
       weekday: 'short',
@@ -105,16 +93,12 @@ function buildOption() {
         const goldParam = params.find((item) => item.seriesName === 'Gold 24K spot (₹ / 10 g)')
         const silverParam = params.find((item) => item.seriesName === 'Silver 999 spot (₹ / g)')
         const t = formatDateTime(params[0].axisValue || params[0].name || '')
-        const formatValue = (param) => {
-          const value = Array.isArray(param?.value) ? param.value[1] : param?.value
-          return value === null || value === undefined || !Number.isFinite(Number(value))
-            ? '—'
-            : Number(value).toLocaleString('en-IN')
-        }
+        const goldVal = Array.isArray(goldParam?.value) ? goldParam.value[1] : (goldParam?.value ?? 0)
+        const silverVal = Array.isArray(silverParam?.value) ? silverParam.value[1] : (silverParam?.value ?? 0)
         return `<div style="font-size:12px;padding:4px 2px">
           <div style="font-weight:700;margin-bottom:6px">${t} IST</div>
-          <div style="color:${goldLabel}">Gold 24K spot · ₹${formatValue(goldParam)} / 10 g</div>
-          <div style="color:${silverLabel}">Silver 999 spot · ₹${formatValue(silverParam)} / g</div>
+          <div style="color:${goldLabel}">Gold 24K spot · ₹${goldVal.toLocaleString('en-IN')} / 10 g</div>
+          <div style="color:${silverLabel}">Silver 999 spot · ₹${silverVal.toLocaleString('en-IN')} / g</div>
         </div>`
       },
     },
@@ -138,8 +122,8 @@ function buildOption() {
         name: 'Gold 24K spot (₹ / 10 g)',
         nameTextStyle: { color: goldLabel, fontSize: 11, fontWeight: 500 },
         position: 'left',
-        min: minGold,
-        max: maxGold,
+        min: Math.floor(minGold / 500) * 500,
+        max: Math.ceil(maxGold / 500) * 500,
         axisLine: { lineStyle: { color: axisLine } },
         axisTick: { show: false },
         axisLabel: {
@@ -156,8 +140,8 @@ function buildOption() {
         type: 'value',
         name: '',
         position: 'right',
-        min: minSilver,
-        max: maxSilver,
+        min: Math.floor(minSilver),
+        max: Math.ceil(maxSilver),
         axisLine: { lineStyle: { color: axisLine } },
         axisTick: { show: false },
         axisLabel: {
@@ -193,7 +177,6 @@ function buildOption() {
         },
         data: goldSeries,
         yAxisIndex: 0,
-        connectNulls: false,
       },
       {
         name: 'Silver 999 spot (₹ / g)',
@@ -206,7 +189,6 @@ function buildOption() {
         lineStyle: { color: '#6b7280', width: 2, type: 'dashed' },
         data: silverSeries,
         yAxisIndex: 1,
-        connectNulls: false,
       },
     ],
   }

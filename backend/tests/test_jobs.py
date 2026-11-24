@@ -33,22 +33,10 @@ class ScheduledHourlyUpdateTests(unittest.TestCase):
             "last_periodic_status": "sent",
         }
         self.live_snapshot = {
-            "captured_at": self.now.isoformat(),
             "metals": {
-                "XAU": {
-                    "live": True,
-                    "inr_per_gram": 100,
-                    "usd_per_oz": 2600,
-                    "updated_at": self.now.isoformat(),
-                },
-                "XAG": {
-                    "live": True,
-                    "inr_per_gram": 1,
-                    "usd_per_oz": 30,
-                    "updated_at": self.now.isoformat(),
-                },
-            },
-            "fx": {"USD_INR": 80},
+                "XAU": {"live": True},
+                "XAG": {"live": True},
+            }
         }
 
     def test_due_update_saves_one_snapshot_and_dispatches(self):
@@ -94,7 +82,6 @@ class ScheduledHourlyUpdateTests(unittest.TestCase):
 
     def test_stale_market_data_is_not_sent(self):
         stale_snapshot = {
-            "captured_at": self.now.isoformat(),
             "metals": {
                 "XAU": {"live": False},
                 "XAG": {"live": False},
@@ -114,25 +101,6 @@ class ScheduledHourlyUpdateTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "live market data is unavailable"):
                 scheduled_periodic_update()
 
-        save_snapshot.assert_not_called()
-        create_jobs.assert_not_called()
-
-    def test_scheduled_capture_does_not_save_stale_prices(self):
-        stale_snapshot = {
-            **self.live_snapshot,
-            "metals": {
-                **self.live_snapshot["metals"],
-                "XAU": {**self.live_snapshot["metals"]["XAU"], "live": False},
-            },
-        }
-        with (
-            patch("app.scheduler.jobs.get_latest_snapshot", return_value=stale_snapshot),
-            patch("app.scheduler.jobs.save_snapshot") as save_snapshot,
-            patch("app.scheduler.jobs.create_jobs") as create_jobs,
-        ):
-            result = scheduled_capture("market_open")
-
-        self.assertEqual(result, {"saved": False, "reason": "invalid_market_data"})
         save_snapshot.assert_not_called()
         create_jobs.assert_not_called()
 

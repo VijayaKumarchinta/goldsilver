@@ -10,26 +10,26 @@ const props = defineProps({
 
 const emit = defineEmits(['toggle-theme'])
 
-const isDark = ref(
-  document.documentElement.getAttribute('data-theme') === 'dark'
-)
+function getTheme() {
+  return document.documentElement.getAttribute('data-theme') ||
+    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+}
+
+const isDark = ref(getTheme() === 'dark')
 
 const chipText = computed(() => props.feedStatus)
 const chipDot = computed(() => props.connected ? 'green' : 'amber')
 
 function toggleTheme() {
   emit('toggle-theme')
-  // Sync after parent updates the DOM attribute
-  requestAnimationFrame(() => {
-    isDark.value = document.documentElement.getAttribute('data-theme') === 'dark'
-  })
+  isDark.value = !isDark.value
 }
 </script>
 
 <template>
   <header class="header">
     <div class="header-inner">
-      <a href="#" class="brand" aria-label="Gold and Silver Prices India home">
+      <a href="#" class="brand" aria-label="Bullion Desk India home">
         <span class="brand-mark">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="9"/>
@@ -37,8 +37,8 @@ function toggleTheme() {
           </svg>
         </span>
         <span class="brand-text">
-          Gold & Silver Prices
-          <small>India Market Monitor</small>
+          Bullion Desk
+          <small>India</small>
         </span>
       </a>
 
