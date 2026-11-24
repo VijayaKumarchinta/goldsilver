@@ -45,7 +45,7 @@ def scheduled_capture(event_type: str):
         if not _all_live(snap):
             snap = _wait_for_live_prices(event_type) if event_type in NOTIFY_EVENTS else None
             if snap is None:
-                log.error("%s skipped: live MCX prices are unavailable, so nothing was saved or sent", event_type)
+                log.warning("%s skipped: live MCX prices are unavailable, so nothing was saved or sent", event_type)
                 return
         snapshot_id = save_snapshot(snap, event_type=event_type)
         if event_type in {"market_open", "market_close", "weekly_close"}:
@@ -82,9 +82,11 @@ def scheduled_periodic_update():
             return {"due": False, "next_send_at": baseline + timedelta(minutes=30)}
 
         if not Config.TELEGRAM_BOT_TOKEN:
-            raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured")
+            log.warning("Telegram update skipped: TELEGRAM_BOT_TOKEN is not configured")
+            return {"due": False, "reason": "missing_bot_token"}
         if not list_enabled():
-            raise RuntimeError("No enabled Telegram destinations are configured")
+            log.warning("Telegram update skipped: no enabled destinations are configured")
+            return {"due": False, "reason": "no_destinations"}
 
         scheduled_for = now.replace(second=0, microsecond=0)
         if has_scheduled_slot(scheduled_for):
@@ -95,7 +97,8 @@ def scheduled_periodic_update():
             snapshot.get("metals", {}).get(symbol, {}).get("live")
             for symbol in ("XAU", "XAG")
         ):
-            raise RuntimeError("Telegram update skipped because live market data is unavailable")
+            log.warning("Telegram update skipped: live MCX market data is unavailable")
+            return {"due": False, "reason": "live_market_data_unavailable"}
 
         # Always record a fresh periodic_update snapshot so the chart and the
         # notification history stay on the same 30-minute cadence.

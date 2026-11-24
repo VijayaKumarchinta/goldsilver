@@ -98,9 +98,10 @@ class ScheduledHourlyUpdateTests(unittest.TestCase):
             patch("app.scheduler.jobs.save_snapshot") as save_snapshot,
             patch("app.scheduler.jobs.create_jobs") as create_jobs,
         ):
-            with self.assertRaisesRegex(RuntimeError, "live market data is unavailable"):
-                scheduled_periodic_update()
+            result = scheduled_periodic_update()
 
+        self.assertFalse(result["due"])
+        self.assertEqual(result["reason"], "live_market_data_unavailable")
         save_snapshot.assert_not_called()
         create_jobs.assert_not_called()
 

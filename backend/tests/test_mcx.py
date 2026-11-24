@@ -45,6 +45,20 @@ class McxParserTests(unittest.TestCase):
             mcx.parse_market_watch({"d": {"Data": rows}}, today=date(2026, 11, 23))
         self.assertIn("Foo", str(ctx.exception))
 
+    def test_accepts_current_live_payload_shape(self):
+        rows = [
+            {"ProductCode": "GOLD", "InstrumentName": "FUTCOM", "ExpiryDate": "04DEC2026", "LTP": 126021},
+            {"ProductCode": "GOLD", "InstrumentName": "OPTFUT", "ExpiryDate": "27NOV2026", "LTP": 900},
+            {"ProductCode": "SILVER", "InstrumentName": "FUTCOM", "ExpiryDate": "04DEC2026", "LTP": 154205},
+        ]
+        for payload in (
+            {"Summary": {}, "Data": rows},
+            {"success": True, "data": {"Summary": {}, "Data": rows}},
+        ):
+            result = mcx.parse_market_watch(payload, today=date(2026, 11, 24), roll_days=5)
+            self.assertEqual(result["gold"], {"price": 126021.0, "expiry": date(2026, 12, 4)})
+            self.assertEqual(result["silver"], {"price": 154205.0, "expiry": date(2026, 12, 4)})
+
     def test_zero_or_missing_prices_are_ignored(self):
         rows = [{"Symbol": "GOLD", "InstrumentName": "FUTCOM", "ExpiryDate": "05DEC2026", "LTP": 0}]
         self.assertIsNone(mcx.pick_contract(rows, "GOLD", date(2026, 11, 23), 5))

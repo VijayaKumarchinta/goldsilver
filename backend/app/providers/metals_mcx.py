@@ -17,24 +17,26 @@ from app.config import Config
 log = logging.getLogger(__name__)
 
 PAGE_URL = "https://www.mcxindia.com/market-data/market-watch"
-DATA_URL = "https://www.mcxindia.com/backpage.aspx/GetMarketWatch"
+# The page builds its data URL as origin + pathname + "/GetMarketWatch".
+DATA_URL = f"{PAGE_URL}/GetMarketWatch"
 CACHE_SECONDS = 15
+# MCX blocks cloud IPs; retrying every few seconds only feeds the bot filter.
+FAILURE_BACKOFF_SECONDS = 300
 HEADERS = {
     "Accept": "application/json, text/javascript, */*; q=0.01",
-    "Content-Type": "application/json",
     "Origin": "https://www.mcxindia.com",
     "Referer": PAGE_URL,
     "X-Requested-With": "XMLHttpRequest",
 }
 # MCX does not document its field names, so several spellings are accepted.
-SYMBOL_KEYS = ("Symbol", "Commodity", "CommodityName", "Product", "ProductName")
+SYMBOL_KEYS = ("ProductCode", "Symbol", "Commodity", "CommodityName", "Product", "ProductName")
 INSTRUMENT_KEYS = ("InstrumentName", "Instrument", "InstrumentType")
 PRICE_KEYS = ("LTP", "LastTradedPrice", "LastPrice", "Last", "ClosePrice")
 EXPIRY_KEYS = ("ExpiryDate", "Expiry", "ExpiryDt")
 EXPIRY_FORMATS = ("%d%b%Y", "%d %b %Y", "%d-%b-%Y", "%Y-%m-%d", "%d/%m/%Y", "%d%B%Y", "%d %B %Y")
 
 _lock = Lock()
-_cache: dict = {"t": None, "data": None}
+_cache: dict = {"t": None, "data": None, "retry_at": None}
 _session = None
 
 
@@ -82,9 +84,20 @@ def pick_contract(rows: list, symbol: str, today: date, roll_days: int) -> dict 
     return min(eligible, key=lambda c: c["expiry"]) if eligible else None
 
 
+def _rows(payload: dict) -> list:
+    """MCX has wrapped this payload as {'Data': ...}, {'d': {'Data': ...}} and
+    {'success': ..., 'data': {'Data': ...}}; accept all three."""
+    if not isinstance(payload, dict):
+        raise ValueError("MCX returned an unexpected payload")
+    body = payload.get("data") or payload.get("d") or payload
+    if not isinstance(body, dict) or not isinstance(body.get("Data"), list):
+        raise ValueError(f"MCX payload has no Data list; keys seen: {sorted(body)[:8]}")
+    return body["Data"]
+
+
 def parse_market_watch(payload: dict, today: date | None = None, roll_days: int | None = None) -> dict:
     """{'gold': {'price': INR/10 g, 'expiry': date}, 'silver': {'price': INR/kg, 'expiry': date}}"""
-    rows = payload["d"]["Data"]
+    rows = _rows(payload)
     today = today or datetime.now(timezone.utc).date()
     roll = Config.MCX_ROLL_DAYS if roll_days is None else roll_days
     gold = pick_contract(rows, "GOLD", today, roll)
@@ -113,10 +126,17 @@ def fetch_mcx() -> dict | None:
         now = time.monotonic()
         if _cache["t"] is not None and now - _cache["t"] < CACHE_SECONDS:
             return _cache["data"]
+        if _cache["retry_at"] is not None and now < _cache["retry_at"]:
+            return None
         _cache["t"] = now
         try:
             _session = _session or _new_session()
-            response = _session.post(DATA_URL, headers=HEADERS, data={}, timeout=20)
+            response = _session.get(
+                DATA_URL,
+                params={"culture": "en-US"},
+                headers=HEADERS,
+                timeout=20,
+            )
             if response.status_code in (401, 403):
                 _session = None
                 raise RuntimeError(f"blocked by MCX (HTTP {response.status_code})")
@@ -124,10 +144,18 @@ def fetch_mcx() -> dict | None:
             quote = parse_market_watch(response.json())
             quote["fetched_at"] = datetime.now(timezone.utc)
             _cache["data"] = quote
+            _cache["retry_at"] = None
             return quote
         except Exception as exc:  # network, bot filter, changed page format
-            log.warning("MCX fetch failed: %s: %s", type(exc).__name__, str(exc)[:200])
+            log.warning(
+                "MCX fetch failed (retrying in %ss): %s: %s",
+                FAILURE_BACKOFF_SECONDS,
+                type(exc).__name__,
+                str(exc)[:200],
+            )
             _cache["data"] = None
+            _cache["retry_at"] = now + FAILURE_BACKOFF_SECONDS
+            _session = None
             return None
 
 
