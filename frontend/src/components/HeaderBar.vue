@@ -1,25 +1,13 @@
 <script setup>
-import { ref } from 'vue'
+import { computed } from 'vue'
+import { useTheme } from '../composables/useTheme'
 
-const props = defineProps({
+defineProps({
   marketStatus: { type: String, required: true },
 })
 
-const emit = defineEmits(['toggle-theme'])
-
-function getTheme() {
-  return document.documentElement.getAttribute('data-theme') ||
-    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-}
-
-const isDark = ref(getTheme() === 'dark')
-
-
-
-function toggleTheme() {
-  emit('toggle-theme')
-  isDark.value = !isDark.value
-}
+const { theme, toggle: toggleTheme } = useTheme()
+const isDark = computed(() => theme.value === 'dark')
 </script>
 
 <template>
@@ -44,8 +32,8 @@ function toggleTheme() {
           class="icon-btn"
           type="button"
           @click="toggleTheme"
-          :aria-pressed="isDark"
           :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
+          :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
         >
           <svg v-if="isDark" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
             <circle cx="12" cy="12" r="4"/>
@@ -66,10 +54,6 @@ function toggleTheme() {
   white-space: normal;
   line-height: 1.35;
   text-align: right;
-}
-
-.chip.stale {
-  color: var(--ink-2);
 }
 
 @media (max-width: 640px) {

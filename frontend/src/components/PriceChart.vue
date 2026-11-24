@@ -1,5 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, watch, ref } from 'vue'
+import { useTheme } from '../composables/useTheme'
+
 const props = defineProps({
   labels: { type: Array, default: () => [] },
   goldData: { type: Array, default: () => [] },
@@ -11,9 +13,8 @@ const chartContainer = ref(null)
 let chartInstance = null
 let echartsModule = null
 
-const isDark = computed(() =>
-  document.documentElement.getAttribute('data-theme') === 'dark'
-)
+const { theme } = useTheme()
+const isDark = computed(() => theme.value === 'dark')
 
 function buildOption() {
   const dark = isDark.value

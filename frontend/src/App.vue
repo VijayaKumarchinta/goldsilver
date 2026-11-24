@@ -5,11 +5,9 @@ import NotificationLogs from './components/NotificationLogs.vue'
 import PriceChart from './components/PriceChart.vue'
 import PurityTable from './components/PurityTable.vue'
 import { useApi } from './composables/useApi'
-import { useDashboard } from './composables/useDashboard'
 import { money } from './utils/format.js'
 
 const { prices, chart, logsData, purity, marketOpen, loading, error, refreshChart, startAutoRefresh } = useApi()
-const dashboard = useDashboard()
 const chartRange = ref('1D')
 let stopAutoRefresh = null
 
@@ -54,8 +52,8 @@ const gold = computed(() => prices.value?.gold)
 const silver = computed(() => prices.value?.silver)
 const feedLive = computed(() => Boolean(gold.value?.live && silver.value?.live))
 const feedStatus = computed(() => {
-  if (!prices.value) return loading.value ? 'Connecting to market feed' : 'Market feed unavailable'
-  return feedLive.value ? 'Live market feed' : 'Market feed unavailable: showing saved prices'
+  if (!prices.value) return loading.value ? 'Connecting to price feed' : 'Price feed unavailable'
+  return feedLive.value ? 'Live prices' : 'Saved prices — live feed down'
 })
 const feedAlert = computed(() => {
   const feed = prices.value?.feed
@@ -63,7 +61,7 @@ const feedAlert = computed(() => {
   const since = feed.last_success_at
     ? `since ${formatDateTime(feed.last_success_at)}`
     : 'since the backend started'
-  return `Live market feed unavailable ${since}. Showing the last saved prices; Telegram updates are paused until it recovers.`
+  return `Live price feed unavailable ${since}. Showing the last saved prices; Telegram updates are paused until it recovers.`
 })
 // Announced only when the feed state changes, never on the 5-second poll.
 const feedAnnouncement = ref('')
@@ -84,16 +82,16 @@ watch(
     if (state === lastFeedState) return
     lastFeedState = state
     feedAnnouncement.value = state === 'stale'
-      ? 'Live market feed unavailable. Showing saved prices; Telegram updates are paused.'
+      ? 'Live price feed unavailable. Showing saved prices; Telegram updates are paused.'
       : state === 'live'
-        ? 'Live market feed restored.'
-        : 'Live market feed unavailable. Showing saved prices.'
+        ? 'Live price feed restored.'
+        : 'Live price feed unavailable. Showing saved prices.'
   },
   { immediate: true },
 )
 const marketStatusText = computed(() => {
-  if (!prices.value) return loading.value ? 'Checking market session' : 'Market session unavailable'
-  return marketOpen.value ? 'Market session open' : 'Market session closed'
+  if (!prices.value) return loading.value ? 'Checking market hours' : 'Market hours unavailable'
+  return marketOpen.value ? 'MCX market open' : 'MCX market closed'
 })
 const providerName = computed(() => gold.value?.source || 'MCX futures')
 const usdInr = computed(() => {
@@ -102,10 +100,10 @@ const usdInr = computed(() => {
 })
 const telegramStatus = computed(() => {
   const status = logsData.value?.last_periodic_status
-  if (status === 'failed') return 'Latest attempt failed'
-  if (status === 'pending' || status === 'sending') return 'Delivery retry pending'
-  if (logsData.value?.last_periodic_sent_at) return '30-minute update delivered'
-  return 'No 30-minute delivery recorded yet'
+  if (status === 'failed') return 'Last attempt failed'
+  if (status === 'pending' || status === 'sending') return 'Retrying delivery'
+  if (logsData.value?.last_periodic_sent_at) return 'Last update delivered'
+  return 'No update sent yet'
 })
 const nextSendText = computed(() => {
   if (prices.value?.feed?.stale) return 'Paused until the market feed returns'
@@ -130,9 +128,9 @@ function changeClass(quote) {
 
 function changeLabel(quote) {
   const change = changePercent(quote)
-  if (change === null) return 'No saved reading yet'
-  if (change === 0) return 'No change since the first saved reading today'
-  return `${change > 0 ? '+' : ''}${change.toFixed(2)}% since the first saved reading today`
+  if (change === null) return 'No earlier reading to compare'
+  if (change === 0) return 'No change since the first reading today'
+  return `${change > 0 ? '+' : ''}${change.toFixed(2)}% since the first reading today`
 }
 
 const chartSummary = computed(() => {
@@ -141,7 +139,7 @@ const chartSummary = computed(() => {
   }
   const first = chartRows.value[0]
   const latest = chartRows.value[chartRows.value.length - 1]
-  return `${chartRange.value} history contains ${chartRows.value.length} saved observations, from ${first.label} to ${latest.label}.`
+  return `${chartRange.value} history has ${chartRows.value.length} saved readings, from ${first.label} to ${latest.label}.`
 })
 
 function onRangeChange(range) {
@@ -159,23 +157,20 @@ onUnmounted(() => stopAutoRefresh?.())
 <template>
   <div class="app">
     <a class="skip-link" href="#main">Skip to market prices</a>
-    <HeaderBar
-      :market-status="marketStatusText"
-      @toggle-theme="dashboard.toggleTheme"
-    />
+    <HeaderBar :market-status="marketStatusText" />
 
     <main id="main" class="main dashboard-main" tabindex="-1" :aria-busy="!prices && loading ? 'true' : undefined">
       <section class="dashboard-intro">
         <div>
-          <p class="dashboard-eyebrow">MARKET MONITOR · INDIA</p>
-          <h1>Gold and silver, clearly.</h1>
-          <p class="dashboard-lede">MCX gold and silver futures, with international spot and USD/INR for reference. All times shown in IST.</p>
+          <p class="dashboard-eyebrow">LIVE MCX PRICES</p>
+          <h1>Gold and silver prices in India</h1>
+          <p class="dashboard-lede">Front-month MCX futures in rupees, with COMEX spot and USD/INR for reference. All times are IST.</p>
         </div>
         <div class="feed-summary" :class="{ 'feed-summary-stale': !feedLive }">
           <span class="feed-light" aria-hidden="true"></span>
           <div class="feed-summary-copy">
             <strong>{{ feedStatus }}</strong>
-            <span>Prices refresh every 5 seconds</span>
+            <span>Refreshes every 5 seconds</span>
           </div>
           <div class="feed-summary-time">
             <span>Updated</span>
@@ -193,7 +188,7 @@ onUnmounted(() => stopAutoRefresh?.())
 
       <section class="market-strip" aria-label="Market data status">
         <div class="strip-item">
-          <span>Price source</span>
+          <span>Source</span>
           <strong class="provider-name">{{ providerName }}</strong>
         </div>
         <div class="strip-item">
@@ -210,8 +205,8 @@ onUnmounted(() => stopAutoRefresh?.())
         <article class="quote-card gold-quote">
           <div class="quote-heading">
             <div>
-              <span class="quote-symbol">XAU · GOLD</span>
-              <h2>Gold futures · ₹ / 10 g</h2>
+              <span class="quote-symbol">MCX FRONT MONTH</span>
+              <h2>Gold · ₹ per 10 g</h2>
             </div>
             <span class="quote-state" :class="{ stale: !gold?.live }">
               {{ gold?.live ? 'Live' : 'Saved' }}
@@ -221,11 +216,12 @@ onUnmounted(() => stopAutoRefresh?.())
             <span v-if="gold">{{ money(gold.close, 0) }}</span>
             <template v-else><span aria-hidden="true">—</span><span class="sr-only">Gold price unavailable</span></template>
           </p>
-          <div class="quote-details">              <span>{{ gold ? `${money(gold.inr_per_gram, 2)} / g` : '₹ — / g' }}</span>
+          <div class="quote-details">
+            <span>{{ gold ? `${money(gold.inr_per_gram, 2)} / g` : '₹ — / g' }}</span>
             <span>{{ gold?.usd_per_oz ? `COMEX $${Number(gold.usd_per_oz).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / oz` : 'COMEX — / oz' }}</span>
           </div>
           <div class="quote-change" :class="changeClass(gold)">
-            <span>Session movement</span>
+            <span>Change today</span>
             <strong>{{ changeLabel(gold) }}</strong>
           </div>
         </article>
@@ -233,8 +229,8 @@ onUnmounted(() => stopAutoRefresh?.())
         <article class="quote-card silver-quote">
           <div class="quote-heading">
             <div>
-              <span class="quote-symbol">XAG · SILVER</span>
-              <h2>Silver futures · ₹ / 10 g</h2>
+              <span class="quote-symbol">MCX FRONT MONTH</span>
+              <h2>Silver · ₹ per 10 g</h2>
             </div>
             <span class="quote-state" :class="{ stale: !silver?.live }">
               {{ silver?.live ? 'Live' : 'Saved' }}
@@ -244,11 +240,12 @@ onUnmounted(() => stopAutoRefresh?.())
             <span v-if="silver">{{ money(silver.close, 0) }}</span>
             <template v-else><span aria-hidden="true">—</span><span class="sr-only">Silver price unavailable</span></template>
           </p>
-          <div class="quote-details">              <span>{{ silver ? `${money(silver.inr_per_gram, 2)} / g` : '₹ — / g' }}</span>
+          <div class="quote-details">
+            <span>{{ silver ? `${money(silver.inr_per_gram, 2)} / g` : '₹ — / g' }}</span>
             <span>{{ silver?.usd_per_oz ? `COMEX $${Number(silver.usd_per_oz).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / oz` : 'COMEX — / oz' }}</span>
           </div>
           <div class="quote-change" :class="changeClass(silver)">
-            <span>Session movement</span>
+            <span>Change today</span>
             <strong>{{ changeLabel(silver) }}</strong>
           </div>
         </article>
@@ -259,14 +256,14 @@ onUnmounted(() => stopAutoRefresh?.())
         <article class="panel chart-panel">
           <div class="panel-heading">
             <div>
-              <p class="panel-eyebrow">SAVED MARKET HISTORY</p>
-              <h2>Price movement</h2>
-              <p class="chart-caption">Saved readings recorded by this app — not a live quote.</p>
+              <p class="panel-eyebrow">PRICE HISTORY</p>
+              <h2>Saved prices over time</h2>
+              <p class="chart-caption">Each point is a saved reading — not a live quote.</p>
             </div>
             <div class="range-switch" role="group" aria-label="Chart range">
-              <button type="button" :aria-pressed="chartRange === '1D'" @click="onRangeChange('1D')">1D</button>
-              <button type="button" :aria-pressed="chartRange === '7D'" @click="onRangeChange('7D')">7D</button>
-              <button type="button" :aria-pressed="chartRange === '30D'" @click="onRangeChange('30D')">30D</button>
+              <button type="button" :aria-pressed="chartRange === '1D'" aria-label="Last 1 day" title="Last 1 day" @click="onRangeChange('1D')">1D</button>
+              <button type="button" :aria-pressed="chartRange === '7D'" aria-label="Last 7 days" title="Last 7 days" @click="onRangeChange('7D')">7D</button>
+              <button type="button" :aria-pressed="chartRange === '30D'" aria-label="Last 30 days" title="Last 30 days" @click="onRangeChange('30D')">30D</button>
             </div>
           </div>
 
@@ -285,13 +282,13 @@ onUnmounted(() => stopAutoRefresh?.())
               :live="chart.live"
             />
             <div v-else id="history-empty" class="history-empty">
-              <strong>No saved observations for this range</strong>
-              <span>New snapshots will appear here as the backend or scheduled runner records them.</span>
+              <strong>No saved readings in this range</strong>
+              <span>Readings appear here once the backend records them.</span>
             </div>
           </div>
 
           <details v-if="chartRows.length" class="chart-data">
-            <summary>View saved observations as a table</summary>
+            <summary>View these readings as a table</summary>
             <div class="chart-data-scroll" role="region" aria-label="Historical gold and silver prices" tabindex="0">
               <table>
                 <caption class="sr-only">Saved gold and silver prices for the selected chart range</caption>
@@ -316,9 +313,9 @@ onUnmounted(() => stopAutoRefresh?.())
 
         <PurityTable :purity="purity?.purity || []" />
         <p class="pricing-note">
-          Exchange futures prices, before GST, making charges and local premiums. If the feed is down the dashboard
-          shows the last saved reading and Telegram updates pause. Saved history starts with this app's first reading
-          and is never backfilled.
+          MCX futures prices exclude GST, making charges and local premiums. When the feed is down, the last saved
+          reading is shown and Telegram updates pause. History starts from this app's first reading and is never
+          backfilled.
         </p>
         </div>
 
@@ -334,15 +331,15 @@ onUnmounted(() => stopAutoRefresh?.())
             <p class="delivery-state">{{ telegramStatus }}</p>
             <dl class="delivery-facts">
               <div>
-                <dt>Last successful scheduled send</dt>
+                <dt>Last sent</dt>
                 <dd>{{ formatDateTime(logsData?.last_periodic_sent_at) }}</dd>
               </div>
               <div>
-                <dt>Next update due</dt>
+                <dt>Next send</dt>
                 <dd>{{ nextSendText }}</dd>
               </div>
               <div>
-                <dt>Configured cadence</dt>
+                <dt>Sends every</dt>
                 <dd>{{ logsData?.interval_minutes || 30 }} minutes</dd>
               </div>
             </dl>

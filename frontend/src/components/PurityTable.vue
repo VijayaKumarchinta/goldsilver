@@ -12,7 +12,7 @@ const rows = computed(() => props.purity)
 <template>
   <div class="panel">
     <div class="tabs">
-      <h2 style="margin:0">Gold by purity and silver</h2>
+      <h2 style="margin:0">Gold purity and silver rates</h2>
     </div>
     <div class="scroll" role="region" aria-label="Gold by purity and silver prices" tabindex="0">
       <table>
@@ -33,6 +33,6 @@ const rows = computed(() => props.purity)
         </tbody>
       </table>
     </div>
-    <p class="hint">22K and 18K rates are derived from the 24K price.</p>
+    <p class="hint">22K and 18K rates are calculated from the 24K rate.</p>
   </div>
 </template>

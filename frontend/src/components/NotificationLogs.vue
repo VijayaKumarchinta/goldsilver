@@ -28,9 +28,9 @@ function statusLabel(status) {
 
 function eventLabel(eventType) {
   const labels = {
-    periodic_update: '30-minute price update',
-    hourly_update: 'Hourly market update',
-    hourly: 'Hourly market update',
+    periodic_update: 'Price update',
+    hourly_update: 'Price update',
+    hourly: 'Price update',
     market_open: 'Market open',
     market_close: 'Market close',
     weekly_close: 'Weekly close',
@@ -61,15 +61,15 @@ function formatTime(iso) {
 <template>
   <div class="panel">
     <div class="panel-header">
-      <h2 id="notification-log-heading">Telegram Notifications</h2>
+      <h2 id="notification-log-heading">Recent sends</h2>
       <span class="panel-sub">
-        {{ logs.length }} notification{{ logs.length !== 1 ? 's' : '' }}
+        {{ logs.length }} send{{ logs.length !== 1 ? 's' : '' }}
         <template v-if="sharedDestination"> · {{ sharedDestination }}</template>
         <template v-else-if="source"> · {{ source }}</template>
       </span>
     </div>
     <div class="panel-body">
-      <div v-if="!logs.length" class="empty">No notifications sent yet.</div>
+      <div v-if="!logs.length" class="empty">No sends yet.</div>
       <section
         v-else
         class="log-region"
