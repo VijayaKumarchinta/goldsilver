@@ -26,13 +26,20 @@ class ChartHistoryTests(unittest.TestCase):
         with patch("app.repositories.history.get_db", return_value=conn):
             history = get_chart_history("1D")
 
-        # The current repository module builds a time-series `labels/gold/silver`
-        # shape and uses the newest per-symbol row as the final series value.
+        # The chart repository returns one point per snapshot timestamp,
+        # with separate per-metal values. A metal is None at a timestamp
+        # where it was not recorded.
         self.assertEqual(history["live"], True)
 
-        self.assertEqual(history["labels"], [first.isoformat().replace("T", " "), latest.isoformat().replace("T", " ")])
+        self.assertEqual(
+            history["labels"],
+            [first.isoformat().replace("T", " "), latest.isoformat().replace("T", " ")],
+        )
+        # Gold per 10 g: first snapshot has 10700 g -> 107000, latest has 10800 g -> 108000.
         self.assertEqual(history["gold"], [107000.0, 108000.0])
-        self.assertEqual(history["silver"], [125.5, 125.5])
+        # Silver per gram: first snapshot has 125.5 g, but the latest snapshot
+        # has no XAG row yet, so it stays None at that point.
+        self.assertEqual(history["silver"], [125.5, None])
 
     def test_no_history_does_not_fetch_live_prices(self):
         conn = Mock()
@@ -56,7 +63,8 @@ class ChartHistoryTests(unittest.TestCase):
 
     def test_series_shape_uses_latest_observation_per_symbol(self):
         first = datetime(2026, 11, 23, 8, 0, tzinfo=timezone.utc)
-        latest = first + timedelta(minutes=15)
+        mid = first + timedelta(minutes=15)
+        latest = mid + timedelta(minutes=15)
         conn = Mock()
         cursor = Mock()
         conn.cursor.return_value = cursor
@@ -66,17 +74,28 @@ class ChartHistoryTests(unittest.TestCase):
 
         cursor.fetchall.return_value = [
             {"captured_at": latest, "symbol": "XAU", "inr_per_gram": Decimal("10800")},
-            {"captured_at": first, "symbol": "XAG", "inr_per_gram": Decimal("125.5")},
+            {"captured_at": mid, "symbol": "XAG", "inr_per_gram": Decimal("125.5")},
+            {"captured_at": first, "symbol": "XAG", "inr_per_gram": Decimal("124.0")},
             {"captured_at": first, "symbol": "XAU", "inr_per_gram": Decimal("10700")},
+            {"captured_at": mid, "symbol": "XAU", "inr_per_gram": Decimal("10750")},
         ]
 
         with patch("app.repositories.history.get_db", return_value=conn):
             history = get_chart_history("1D")
 
         self.assertEqual(history["live"], True)
-        self.assertEqual(history["labels"], [first.isoformat().replace("T", " "), latest.isoformat().replace("T", " ")])
-        self.assertEqual(history["gold"], [107000.0, 108000.0])
-        self.assertEqual(history["silver"], [125.5, 125.5])
+        self.assertEqual(
+            history["labels"],
+            [
+                first.isoformat().replace("T", " "),
+                mid.isoformat().replace("T", " "),
+                latest.isoformat().replace("T", " "),
+            ],
+        )
+        # Gold per 10 g: 10700 -> 10800, with a midpoint reading.
+        self.assertEqual(history["gold"], [107000.0, 107500.0, 108000.0])
+        # Silver per gram: 124.0 -> 125.5, with no reading at the last timestamp.
+        self.assertEqual(history["silver"], [124.0, 125.5, None])
 
 
 if __name__ == "__main__":

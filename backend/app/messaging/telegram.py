@@ -15,7 +15,7 @@ class TelegramSender(Sender):
                 json={
                     "chat_id": identifier,
                     "text": text,
-                    "parse_mode": "Markdown",
+                    "parse_mode": "MarkdownV2",
                     "disable_web_page_preview": True,
                 },
                 timeout=15,

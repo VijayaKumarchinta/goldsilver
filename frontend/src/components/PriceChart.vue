@@ -65,6 +65,31 @@ function buildOption() {
     })
   }
 
+  function formatAxisLabel(value, seriesType) {
+    const date = parseDate(value)
+    if (!date) return value
+    const hasAdjacent = (idx) => {
+      const prev = props.labels[idx - 1]
+      const next = props.labels[idx + 1]
+      if (!prev || !next) return true
+      const prevDate = parseDate(prev)
+      const nextDate = parseDate(next)
+      if (!prevDate || !nextDate) return true
+      const diffMs = (nextDate - prevDate) / 2
+      return diffMs > 3 * 3600 * 1000
+    }
+    const idx = props.labels.indexOf(value)
+    if (!hasAdjacent(idx)) return ''
+    if (seriesType === 'date') {
+      return date.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        timeZone: 'Asia/Kolkata',
+      })
+    }
+    return formatTime(value)
+  }
+
   return {
     backgroundColor: 'transparent',
     animation: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
@@ -112,7 +137,7 @@ function buildOption() {
         fontSize: 11,
         fontFamily: 'Segoe UI, Arial, system-ui, sans-serif',
         interval: 'auto',
-        formatter: formatTime,
+        formatter: (value) => formatAxisLabel(value, 'date'),
       },
       splitLine: { show: false },
     },

@@ -40,7 +40,9 @@ def format_price_message(snapshot: dict, event_label: str) -> str:
     gold_10g = gold_gram * Decimal("10")
     silver_10g = silver_gram * Decimal("10")
 
-    return (
+    # Telegram uses MarkdownV2. Every literal punctuation character must be escaped
+    # so the message renders correctly in the group.
+    return _escape_markdown_v2(
         f"{title}\n\n"
         f"Gold 24K: ₹{_number(gold_gram)} per gram "
         f"(₹{_number(gold_10g)} per 10 grams)\n"
@@ -53,3 +55,42 @@ def format_price_message(snapshot: dict, event_label: str) -> str:
         f"Checked: {updated}\n\n"
         "MCX futures prices exclude GST and making charges; local retail rates differ."
     )
+
+_TELEGRAM_MD_V2_ESCAPE = {
+    "-": "\\- ",
+    ".": "\\. ",
+    "!": "\\! ",
+    "(": "\\(",
+    ")": "\\)",
+    "*": "\\*",
+    "_": "\\_",
+    "`": "\\`",
+    "[": "\\[",
+    "]": "\\]",
+    "{": "\\{",
+    "}": "\\}",
+    "^": "\\^",
+    "\\": "\\\\",
+    "~": "\\~",
+    "#": "\\#",
+    "+": "\\+",
+    "=": "\\=",
+    "|": "\\|",
+    ">": "\\>",
+    "<": "\\<",
+    "&": "\\&",
+    "$": "\\$",
+}
+
+def _escape_markdown_v2(text: str) -> str:
+    # Telegram's MarkdownV2 requires many ASCII punctuation characters to be escaped
+    # with a backslash. Escaping is applied once at message-build time.
+    result = []
+    for ch in text:
+        replacement = _TELEGRAM_MD_V2_ESCAPE.get(ch)
+        if replacement is None:
+            result.append(ch)
+        else:
+            result.append(replacement.rstrip(" "))
+    return "".join(result)
+    return "".join(result)

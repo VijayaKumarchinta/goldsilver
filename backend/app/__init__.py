@@ -39,11 +39,14 @@ def create_app(start_sched: bool = True):
     app.register_blueprint(logs_bp, url_prefix="/api/logs")
 
     # Serve the built dashboard (frontend/dist) from the same origin when it exists.
+    # The Vue SPA handles client-side routing, so non-API routes should return
+    # index.html so the frontend can render the correct page.
     dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if dist.is_dir():
         @app.route("/", defaults={"path": ""})
         @app.route("/<path:path>")
         def dashboard(path):
+            # Exclude API and WebSocket routes from the SPA fallback.
             if path.startswith(("api/", "socket.io")):
                 abort(404)
             if path and (dist / path).is_file():
