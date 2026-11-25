@@ -4,6 +4,19 @@ from psycopg2.extras import RealDictCursor
 from app.extensions import get_db
 from app.services.market_data import _FAMILY_SQL, source_family
 
+# Five-minute snapshots produce 288 points a day. Keep the payload bounded
+# while still covering the whole selected range.
+MAX_POINTS = {"1D": 288, "7D": 336, "30D": 360}
+
+
+def _downsample(items: list[dict], max_points: int) -> list[dict]:
+    """Keep evenly spaced points, always including the newest reading."""
+    if len(items) <= max_points:
+        return items
+    step = len(items) / (max_points - 1)
+    indexes = sorted({int(index * step) for index in range(max_points - 1)} | {len(items) - 1})
+    return [items[index] for index in indexes]
+
 
 def get_chart_history(range_val: str = "7D") -> dict:
     """Return chart time-series from the database.
@@ -14,7 +27,7 @@ def get_chart_history(range_val: str = "7D") -> dict:
     Gold is reported per 10 g (inr_per_gram * 10) and silver is
     reported per gram (inr_per_gram). Series are raw readings,
     one point per snapshot timestamp, only where that metal was
-    actually recorded.
+    actually recorded. Long ranges are downsampled to MAX_POINTS.
     """
     conn = get_db()
     try:
@@ -22,14 +35,10 @@ def get_chart_history(range_val: str = "7D") -> dict:
 
         if range_val == "1D":
             interval = "1 day"
-            limit = 180
         elif range_val == "7D":
             interval = "7 days"
-            limit = 420
         else:
             interval = "30 days"
-            limit = 900
-
 
         # Pick the same family the current view is built from so the
         # chart never mixes two different providers into one trace.
@@ -49,9 +58,8 @@ def get_chart_history(range_val: str = "7D") -> dict:
             JOIN goldbot.metal_prices m ON s.id = m.snapshot_id
             WHERE s.captured_at >= NOW() - (%s)::interval AND {family_sql}
             ORDER BY s.captured_at ASC
-            LIMIT %s
             """,
-            (interval, limit),
+            (interval,),
         )
 
         rows = cur.fetchall()
@@ -69,8 +77,9 @@ def get_chart_history(range_val: str = "7D") -> dict:
             )
             point[r["symbol"]] = float(r["inr_per_gram"])
 
-        # Chronological order.
+        # Chronological order, then bounded evenly across the range.
         sorted_items = sorted(by_time.values(), key=lambda x: x["time"])
+        sorted_items = _downsample(sorted_items, MAX_POINTS.get(range_val, MAX_POINTS["7D"]))
 
         labels = []
         gold_series = []
