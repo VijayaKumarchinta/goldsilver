@@ -1,8 +1,5 @@
 import logging
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
-from app.scheduler.jobs import scheduled_capture, scheduled_periodic_update
+from app.scheduler.jobs import scheduled_periodic_update
 
 log = logging.getLogger(__name__)
 _scheduler = None
@@ -15,36 +12,15 @@ def start_scheduler():
 
     _scheduler = BackgroundScheduler(timezone="UTC")
 
+    # Only the 30-minute Telegram delivery is a recurring job. The live price
+    # event is broadcast to every Socket.IO client by the same job when a
+    # fresh market snapshot is available, so the dashboard never polls REST.
     jobs = [
         (
-            "market_capture",
-            IntervalTrigger(minutes=15, timezone="UTC"),
-            scheduled_capture,
-            ["market_capture"],
-        ),
-        (
-            "periodic_notification_check",
-            IntervalTrigger(minutes=1, timezone="UTC"),
+            "periodic_update",
+            CronTrigger(minute="*/30", second=0, timezone="Asia/Kolkata"),
             scheduled_periodic_update,
             [],
-        ),
-        (
-            "market_open",
-            CronTrigger(hour=9, minute=0, day_of_week="mon-fri", timezone="Asia/Kolkata"),
-            scheduled_capture,
-            ["market_open"],
-        ),
-        (
-            "market_close",
-            CronTrigger(hour=23, minute=55, day_of_week="mon-thu", timezone="Asia/Kolkata"),
-            scheduled_capture,
-            ["market_close"],
-        ),
-        (
-            "weekly_close",
-            CronTrigger(hour=23, minute=55, day_of_week="fri", timezone="Asia/Kolkata"),
-            scheduled_capture,
-            ["weekly_close"],
         ),
     ]
     for name, trigger, callback, args in jobs:
@@ -61,11 +37,14 @@ def start_scheduler():
         log.info("Registered job: %s -> %s", name, trigger)
     _scheduler.start()
 
-    # Save an immediate reading so charts have data after startup/restart.
+    # Rebuild the chart from the startup reading, then post a 30-minute
+    # Telegram update once the feed is healthy. Neither emits a price event:
+    # the live quote is broadcast by get_latest_snapshot instead.
     try:
-        scheduled_capture("startup")
+        result = scheduled_capture("startup")
+        log.info("Startup capture: %s", result)
     except Exception:
-        log.exception("Startup market capture failed")
+        log.exception("Startup capture failed")
 
     try:
         result = scheduled_periodic_update()

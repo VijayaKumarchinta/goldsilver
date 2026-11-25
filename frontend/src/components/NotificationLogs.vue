@@ -22,7 +22,7 @@ function pillClass(status) {
 }
 
 function statusLabel(status) {
-  if (!status) return '—'
+  if (!status) return '-'
   return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
@@ -64,8 +64,8 @@ function formatTime(iso) {
       <h2 id="notification-log-heading">Recent sends</h2>
       <span class="panel-sub">
         {{ logs.length }} message{{ logs.length !== 1 ? 's' : '' }}
-        <template v-if="sharedDestination"> · {{ sharedDestination }}</template>
-        <template v-else-if="source"> · {{ source }}</template>
+        <template v-if="sharedDestination"> * {{ sharedDestination }}</template>
+        <template v-else-if="source"> * {{ source }}</template>
       </span>
     </div>
     <div class="panel-body">

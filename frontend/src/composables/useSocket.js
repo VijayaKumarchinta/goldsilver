@@ -1,6 +1,9 @@
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch, shallowRef } from 'vue'
 import { io } from 'socket.io-client'
 
+// The dashboard subscribes to price events instead of polling REST. The
+// backend emits every time the live TradingView quote is valid, so the
+// chart, the quote cards and the feed status all update in real time.
 const apiBase = import.meta.env.VITE_API_BASE || '/api'
 const socketOrigin = new URL(apiBase, window.location.origin).origin
 
@@ -10,14 +13,13 @@ const socket = io(socketOrigin, {
   reconnection: true,
   reconnectionAttempts: 10,
   reconnectionDelay: 1000,
+  timeout: 20000,
 })
 
 export function useSocket() {
-  const latest = ref(null)
+  const latest = shallowRef(null)
   const connected = ref(false)
   const error = ref(null)
-
-  // connected defaults to false; socket.io 'connect' event sets it to true
 
   function handlePriceUpdate(snapshot) {
     latest.value = snapshot
@@ -34,7 +36,7 @@ export function useSocket() {
   }
 
   function handleError(err) {
-    error.value = err.message || 'Socket error'
+    error.value = err?.message || 'Socket error'
     connected.value = false
   }
 
@@ -50,6 +52,11 @@ export function useSocket() {
     socket.off('disconnect', handleDisconnect)
     socket.off('price_update', handlePriceUpdate)
     socket.off('connect_error', handleError)
+    try {
+      socket.disconnect()
+    } catch {
+      // already closed
+    }
   })
 
   return {
@@ -57,6 +64,5 @@ export function useSocket() {
     latest,
     connected,
     error,
-    emitPriceRequest: () => socket.emit('request_price'),
   }
 }

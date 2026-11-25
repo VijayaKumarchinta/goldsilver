@@ -116,15 +116,15 @@ function buildOption() {
       extraCssText: 'box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-radius: 8px;',
       formatter: (params) => {
         if (!params || !params.length) return ''
-        const goldParam = params.find((item) => item.seriesName === 'Gold futures (₹ / 10 g)')
-        const silverParam = params.find((item) => item.seriesName === 'Silver futures (₹ / g)')
+        const goldParam = params.find((item) => item.seriesName === 'Gold futures (Rs / 10 g)')
+        const silverParam = params.find((item) => item.seriesName === 'Silver futures (Rs / g)')
         const t = formatDateTime(params[0].axisValue || params[0].name || '')
         const goldVal = Array.isArray(goldParam?.value) ? goldParam.value[1] : (goldParam?.value ?? 0)
         const silverVal = Array.isArray(silverParam?.value) ? silverParam.value[1] : (silverParam?.value ?? 0)
         return `<div style="font-size:12px;padding:4px 2px">
           <div style="font-weight:700;margin-bottom:6px">${t} IST</div>
-          <div style="color:${goldLabel}">Gold futures · ₹${goldVal.toLocaleString('en-IN')} / 10 g</div>
-          <div style="color:${silverLabel}">Silver futures · ₹${silverVal.toLocaleString('en-IN')} / g</div>
+          <div style="color:${goldLabel}">Gold futures * Rs${goldVal.toLocaleString('en-IN')} / 10 g</div>
+          <div style="color:${silverLabel}">Silver futures * Rs${silverVal.toLocaleString('en-IN')} / g</div>
         </div>`
       },
     },
@@ -145,7 +145,7 @@ function buildOption() {
     yAxis: [
       {
         type: 'value',
-        name: 'Gold (₹ / 10 g)',
+        name: 'Gold (Rs / 10 g)',
         nameTextStyle: { color: goldLabel, fontSize: 11, fontWeight: 500, align: 'left' },
         position: 'left',
         min: goldRange.min,
@@ -165,7 +165,7 @@ function buildOption() {
       },
       {
         type: 'value',
-        name: 'Silver (₹ / g)',
+        name: 'Silver (Rs / g)',
         nameTextStyle: { color: silverLabel, fontSize: 11, fontWeight: 500, align: 'right' },
         position: 'right',
         min: silverRange.min,
@@ -184,7 +184,7 @@ function buildOption() {
     ],
     series: [
       {
-        name: 'Gold futures (₹ / 10 g)',
+        name: 'Gold futures (Rs / 10 g)',
         type: 'line',
         smooth: 0.35,
         symbol: 'circle',
@@ -210,7 +210,7 @@ function buildOption() {
         yAxisIndex: 0,
       },
       {
-        name: 'Silver futures (₹ / g)',
+        name: 'Silver futures (Rs / g)',
         type: 'line',
         smooth: 0.35,
         symbol: 'circle',

@@ -50,16 +50,43 @@ def format_price_message(snapshot: dict, event_label: str) -> str:
         f"(₹{_number(silver_10g)} per 10 grams)\n"
         f"Source: {gold.get('source') or 'MCX futures'}; {silver.get('source') or 'MCX futures'}\n"
         f"USD/INR: {_number(usd_inr)}\n"
-        f"International spot (reference): Gold {_number(gold_oz)} USD/oz; "
+        f"International spot reference: Gold {_number(gold_oz)} USD/oz; "
         f"Silver {_number(silver_oz)} USD/oz\n"
         f"Checked: {updated}\n\n"
         "MCX futures prices exclude GST and making charges; local retail rates differ."
     )
 
+
+def format_user_message(snapshot: dict) -> str:
+    """Turn a received Telegram msg into one line-of-context, readable text.
+
+    The bot no longer parses the original message; it keeps a short human-written
+    draft and attaches the extracted context (time, sender, raw text). The draft
+    is the only part the user is allowed to edit, so the chat stays
+    understandable without the bot inventing a new language.
+    """
+    gold = snapshot.get("metals", {}).get("XAU", {})
+    silver = snapshot.get("metals", {}).get("XAG", {})
+    gold_gram = Decimal(str(gold.get("inr_per_gram", "0")))
+    silver_gram = Decimal(str(silver.get("inr_per_gram", "0")))
+    usd_inr = snapshot.get("fx", {}).get("USD_INR", "—")
+    draft = snapshot.get("user_draft") or snapshot.get("context", "")
+    return _escape_markdown_v2(
+        f"User draft: {draft or 'No draft provided'}"
+        + f"\nTime: {_ist_time(snapshot.get('captured_at'))}"
+        + f"\nSender: {snapshot.get('from', {}).get('username') or snapshot.get('from', {}).get('id') or 'unknown'}"
+        + f"\nRaw text: {snapshot.get('text', '').replace(chr(10), ' | ')}"
+        + f"\nGold: {chr(0x20b9)}{_number(gold_gram)} / g"
+        + f"\nSilver: {chr(0x20b9)}{_number(silver_gram)} / g"
+        + f"\nUSD/INR: {_number(usd_inr)}"
+    )
+
+
 _TELEGRAM_MD_V2_ESCAPE = {
     ch: "\\" + ch
-    for ch in r"_*[]()~`>#+-=|{}.!\\"
+    for ch in r"_*[]()~`>#+-=|{}.!"
 }
+
 
 def _escape_markdown_v2(text: str) -> str:
     # Telegram's MarkdownV2 requires many ASCII punctuation characters to be escaped

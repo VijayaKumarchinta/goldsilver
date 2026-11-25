@@ -7,3 +7,14 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+
+# Repository-root scaffolding that sits next to backend/ (changelog, runbook,
+# and the root-level requirements note). These files are deliberately not
+# tracked; the backend ships its own requirements.txt.
+CHANGES.md
+flow.md
+requirements.txt
+
+# Local environment
+.env
+.env.local

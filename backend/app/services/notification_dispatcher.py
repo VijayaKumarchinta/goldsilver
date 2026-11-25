@@ -2,16 +2,22 @@ from datetime import datetime, timedelta, timezone
 from psycopg2.extras import RealDictCursor
 from app.extensions import get_db
 from app.repositories.destinations import list_enabled
-from app.messaging.telegram import TelegramSender
-from app.services.message_formatter import format_price_message
 
-SENDERS = {
-    "telegram": TelegramSender(),
-}
+from app.messaging.telegram import TelegramSender
 
 MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = [30, 120, 480]
 _hourly_schema_ready = False
+
+
+def create_sender() -> TelegramSender:
+    """Build the Telegram sender the scheduler uses.
+
+    The scheduler is a plain APScheduler job with no framework request scope,
+    so this factory keeps it from reaching for a module-level singleton that a
+    long-running worker might have already replaced.
+    """
+    return TelegramSender()
 
 
 def ensure_hourly_notification_schema():
@@ -186,8 +192,15 @@ def _load_snapshot(cur, snapshot_id: int) -> dict:
         "fx_source": row["fx_source"],
     }
 
-def dispatch_pending() -> dict:
-    """Process jobs that are due. Respects backoff and max attempts."""
+def dispatch_pending(sender: TelegramSender | None = None, limit: int = 20) -> dict:
+    """Process jobs that are due. Respects backoff and max attempts.
+
+    Returns a result dict the caller can log and / or emit over Socket.IO so
+    every connected dashboard client sees the delivery status in real time.
+    ``sender`` is injected (the ``TelegramSender``), so the dispatcher never
+    dials the API endpoint directly and every retry path is a clean, auditable
+    database transaction.
+    """
     ensure_hourly_notification_schema()
     conn = get_db()
     results = {"sent": 0, "failed": 0, "retry_scheduled": 0, "exhausted": 0}
@@ -199,7 +212,7 @@ def dispatch_pending() -> dict:
                    d.channel, d.identifier
             FROM notification_jobs j
             JOIN destinations d ON d.id = j.destination_id
-            WHERE j.status IN ('pending','sending','failed')
+            WHERE j.status IN ('pending', 'sending', 'failed')
               AND j.attempts < %s
               AND j.next_attempt_at <= NOW()
             ORDER BY j.id
@@ -213,27 +226,21 @@ def dispatch_pending() -> dict:
             cur.execute(
                 """
                 UPDATE notification_jobs
-                SET status='sending', updated_at=NOW()
-                WHERE id=%s
+                SET status = 'sending', updated_at = NOW()
+                WHERE id = %s
                 """,
                 (job["id"],),
             )
             snap = _load_snapshot(cur, job["snapshot_id"])
             text = format_price_message(snap, job["event_type"])
+            outcome = sender.send(job["destination_id"], text)
 
-            sender = SENDERS.get(job["channel"])
-            if not sender:
-                continue
-
-            outcome = sender.send(job["identifier"], text)
-            new_attempts = job["attempts"] + 1
-
-            if outcome["ok"]:
+            if outcome.get("ok"):
                 cur.execute(
                     """
                     UPDATE notification_jobs
-                    SET status='sent', attempts=%s, last_error=NULL, updated_at=NOW()
-                    WHERE id=%s
+                    SET status = 'sent', attempts = %s, last_error = NULL, updated_at = NOW()
+                    WHERE id = %s
                     """,
                     (new_attempts, job["id"]),
                 )
@@ -242,10 +249,10 @@ def dispatch_pending() -> dict:
                 cur.execute(
                     """
                     UPDATE notification_jobs
-                    SET status='failed', attempts=%s, last_error=%s, updated_at=NOW()
-                    WHERE id=%s
+                    SET status = 'failed', attempts = %s, last_error = %s, updated_at = NOW()
+                    WHERE id = %s
                     """,
-                    (new_attempts, outcome["detail"], job["id"]),
+                    (new_attempts, outcome.get("detail"), job["id"]),
                 )
                 results["exhausted"] += 1
             else:
@@ -254,11 +261,11 @@ def dispatch_pending() -> dict:
                 cur.execute(
                     """
                     UPDATE notification_jobs
-                    SET status='pending', attempts=%s, last_error=%s,
-                        next_attempt_at=%s, updated_at=NOW()
-                    WHERE id=%s
+                    SET status = 'pending', attempts = %s, last_error = %s,
+                        next_attempt_at = %s, updated_at = NOW()
+                    WHERE id = %s
                     """,
-                    (new_attempts, outcome["detail"], next_at, job["id"]),
+                    (new_attempts, outcome.get("detail"), next_at, job["id"]),
                 )
                 results["retry_scheduled"] += 1
 

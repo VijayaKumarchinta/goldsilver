@@ -1,5 +1,4 @@
 import logging
-import time
 from datetime import datetime, timedelta, timezone
 
 from app.config import Config
@@ -37,14 +36,6 @@ def clear_all():
 def _all_live(snap: dict) -> bool:
     return all(snap.get("metals", {}).get(s, {}).get("live") for s in ("XAU", "XAG"))
 
-def _wait_for_live_prices(event_type: str):
-    for attempt in range(3):
-        time.sleep(60)
-        snap = get_latest_snapshot()
-        if _all_live(snap):
-            return snap
-        log.warning("%s: live MCX prices still unavailable (retry %s/3)", event_type, attempt + 1)
-    return None
 
 def scheduled_capture(event_type: str):
     if event_type == "hourly_update":
@@ -74,7 +65,7 @@ def scheduled_periodic_update():
     log.info("Checking whether the 30-minute Telegram update is due")
     try:
         ensure_hourly_notification_schema()
-        dispatch_pending()
+        dispatch_pending(sender=create_sender())
         status = get_notification_status()
         if status["last_periodic_status"] in {"pending", "sending"}:
             return {"due": False, "reason": "notification_pending"}

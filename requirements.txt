@@ -1,4 +1,0 @@
-This repository does not use a root-level Python requirements file.
-
-Backend dependencies are in backend/requirements.txt.
-Frontend dependencies are in frontend/package.json and frontend/package-lock.json.

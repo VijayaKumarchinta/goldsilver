@@ -1,3 +1,4 @@
+import threading
 from datetime import datetime, timezone, time
 from decimal import Decimal
 
@@ -12,6 +13,34 @@ log = logging.getLogger(__name__)
 # When the feed last produced a usable live quote; drives feed_health().
 _BOOT_AT = datetime.now(timezone.utc)
 _last_live_at: datetime | None = None
+
+# One shared broadcaster: every connected dashboard client gets the latest
+# live quote the moment it is valid, and the chart never polls REST for it.
+_broadcast_lock = threading.Lock()
+_price_event = {"last": None, "last_at": None}
+
+
+def subscribe_price_event():
+    """Return a copy of the latest live price event, safe to read without locks."""
+    with _broadcast_lock:
+        return dict(_price_event)
+
+
+def set_price_event(snapshot: dict | None):
+    """Record the newest live market snapshot and notify every Socket.IO client."""
+    with _broadcast_lock:
+        _price_event["last"] = snapshot
+        _price_event["last_at"] = datetime.now(timezone.utc)
+        _last_live_at = _price_event["last_at"]
+
+    # Socket.IO emits are fire-and-forget by design; the client owns reconnect
+    # and retries, so a broker hiccup here never blocks the price feed.
+    try:
+        from app import socketio
+
+        socketio.emit("price_update", snapshot)
+    except Exception:
+        log.exception("price event broadcast failed")
 
 
 def source_family(source) -> str:
@@ -108,34 +137,19 @@ def get_latest_snapshot() -> dict:
 
     live = _live_quote()
     if live:
-        _last_live_at = datetime.now(timezone.utc)
-        metals_live = {}
-        for symbol, metal in live["metals"].items():
-            inr_per_gram = metal["inr_per_gram"]
-            delta = get_open_close_delta(symbol, family=source_family(metal["source"]))
-            open_gram = Decimal(str(delta["open"])) or inr_per_gram
-            metals_live[symbol] = {
-                "inr_per_gram": float(inr_per_gram),
-                "inr_per_10g": float(inr_per_gram * Decimal("10")),
-                "usd_per_oz": metal["usd_per_oz"],
-                "spot_inr_per_10g": float(metal["spot_inr_per_10g"]),
-                "open_per_10g": float(open_gram * Decimal("10")),
-                "updated_at": metal["updated_at"].isoformat(),
-                "source": metal["source"],
-                "live": True,
-                "estimated": False,
-            }
-        return {
+        snapshot = {
             "captured_at": datetime.now(timezone.utc).isoformat(),
             "base_currency": "USD",
             "output_currency": "INR",
             "market_open": _market_open_now(),
-            "metals": metals_live,
+            "metals": live["metals"],
             "fx": {
                 "USD_INR": float(live["fx"]),
                 "FX_SOURCE": "TradingView",
             },
         }
+        set_price_event(snapshot)
+        return snapshot
 
     conn = get_db()
     try:
@@ -162,7 +176,6 @@ def get_latest_snapshot() -> dict:
         fx = {"USD_INR": 0.0}
         fx_source = "db"
         captured_at = rows[0][1].isoformat() if rows[0][1] else None
-        snapshot_id = rows[0][0]
 
         for row in rows:
             symbol = row[2]
@@ -182,6 +195,7 @@ def get_latest_snapshot() -> dict:
                 "source": provider,
                 "live": False,
                 "estimated": source_family(provider) == "estimate",
+                "snapshot_id": None,
             }
             if symbol in metals:
                 metals[symbol] = entry
@@ -204,6 +218,7 @@ def get_latest_snapshot() -> dict:
             "metals": metals,
             "fx": fx,
             "fx_source": fx_source,
+            "snapshot_id": None,
         }
     finally:
         conn.close()
@@ -278,4 +293,3 @@ def _get_daily_open(symbol: str) -> Decimal | None:
             return Decimal(str(row[0])) * Decimal("10")
     finally:
         conn.close()
-    return None

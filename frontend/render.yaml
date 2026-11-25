@@ -1,3 +1,6 @@
+# The dashboard is a static SPA. ``dist`` is committed to the repository so
+# Render serves it directly; the backend only ever pushes price events over
+# Socket.IO and reads historical chart data from PostgreSQL.
 services:
   - type: static
     name: gold-silver-dashboard
