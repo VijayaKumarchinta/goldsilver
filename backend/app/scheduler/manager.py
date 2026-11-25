@@ -15,9 +15,6 @@ def start_scheduler():
 
     _scheduler = BackgroundScheduler(timezone="UTC")
 
-    # Only the 30-minute Telegram delivery is a recurring job. The live price
-    # event is broadcast to every Socket.IO client by the same job when a
-    # fresh market snapshot is available, so the dashboard never polls REST.
     jobs = [
         (
             "periodic_update",
@@ -40,9 +37,6 @@ def start_scheduler():
         log.info("Registered job: %s -> %s", name, trigger)
     _scheduler.start()
 
-    # Rebuild the chart from the startup reading, then post a 30-minute
-    # Telegram update once the feed has settled. Neither emits a price event:
-    # the live quote is broadcast by get_latest_snapshot instead.
     try:
         result = scheduled_periodic_update()
         log.info("Startup Telegram update: %s", result)
@@ -57,4 +51,3 @@ def shutdown_scheduler():
     if _scheduler:
         _scheduler.shutdown(wait=False)
         _scheduler = None
-

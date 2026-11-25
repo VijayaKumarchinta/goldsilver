@@ -7,6 +7,7 @@ from app.repositories.destinations import list_enabled
 from app.repositories.prices import save_snapshot
 from app.services.notification_dispatcher import (
     create_jobs,
+    create_sender,
     dispatch_pending,
     ensure_hourly_notification_schema,
     get_notification_status,
@@ -32,6 +33,7 @@ def clear_all():
         log.info("History cleared for market_close/startup cycle")
     finally:
         conn.close()
+
 
 def _all_live(snap: dict) -> bool:
     return all(snap.get("metals", {}).get(s, {}).get("live") for s in ("XAU", "XAG"))
@@ -60,6 +62,7 @@ def scheduled_capture(event_type: str):
     except Exception as e:
         log.exception("Scheduled job failed for %s: %s", event_type, e)
         raise
+
 
 def scheduled_periodic_update():
     log.info("Checking whether the 30-minute Telegram update is due")
