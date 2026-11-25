@@ -4,6 +4,7 @@ from app.extensions import get_db
 from app.repositories.destinations import list_enabled
 
 from app.messaging.telegram import TelegramSender
+from app.services.message_formatter import format_price_message
 
 MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = [30, 120, 480]
@@ -184,6 +185,8 @@ def _load_snapshot(cur, snapshot_id: int) -> dict:
     }
 
 def dispatch_pending(sender: TelegramSender | None = None, limit: int = 20) -> dict:
+    if sender is None:
+        sender = create_sender()
     ensure_hourly_notification_schema()
     conn = get_db()
     results = {"sent": 0, "failed": 0, "retry_scheduled": 0, "exhausted": 0}
@@ -192,7 +195,7 @@ def dispatch_pending(sender: TelegramSender | None = None, limit: int = 20) -> d
         cur.execute(
             """
             SELECT j.id, j.event_type, j.attempts, j.snapshot_id,
-                   d.channel, d.identifier
+                   d.id AS destination_id, d.channel, d.identifier
             FROM notification_jobs j
             JOIN destinations d ON d.id = j.destination_id
             WHERE j.status IN ('pending', 'sending', 'failed')

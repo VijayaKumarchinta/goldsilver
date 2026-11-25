@@ -1,21 +1,15 @@
 import threading
 from datetime import datetime, timezone, time
 from decimal import Decimal
-
 from app.extensions import get_db
 import logging
-
 from app.config import Config
 from app.providers import metals_tradingview
 
 log = logging.getLogger(__name__)
-
-# When the feed last produced a usable live quote; drives feed_health().
 _BOOT_AT = datetime.now(timezone.utc)
 _last_live_at: datetime | None = None
 
-# One shared broadcaster: every connected dashboard client gets the latest
-# live quote the moment it is valid, and the chart never polls REST for it.
 _broadcast_lock = threading.Lock()
 _price_event = {"last": None, "last_at": None}
 
@@ -33,8 +27,7 @@ def set_price_event(snapshot: dict | None):
         _price_event["last_at"] = datetime.now(timezone.utc)
         _last_live_at = _price_event["last_at"]
 
-    # Socket.IO emits are fire-and-forget by design; the client owns reconnect
-    # and retries, so a broker hiccup here never blocks the price feed.
+
     try:
         from app import socketio
 
@@ -50,7 +43,6 @@ def source_family(source) -> str:
         return "mcx"
     return "estimate" if "estimate" in s else "spot"
 
-
 _FAMILY_SQL = {
     "mcx": "m.provider LIKE 'MCX%%'",
     "estimate": "m.provider LIKE '%%(estimate)'",
@@ -59,13 +51,6 @@ _FAMILY_SQL = {
 
 
 def _live_quote() -> dict | None:
-    """Live MCX futures and FX, or None when missing or implausible.
-
-    Every value comes from one provider (TradingView's scanner), so the futures
-    price, the international spot reference and USD/INR always agree with each
-    other. The ratio guard rejects a parsing or unit change before anything is
-    shown or sent.
-    """
     quote = metals_tradingview.fetch_mcx()
     if not quote:
         return None
@@ -127,14 +112,7 @@ def _market_open_now() -> bool:
 
 
 def get_latest_snapshot() -> dict:
-    """Live MCX snapshot, or the latest saved snapshot when the feed is down.
-
-    The live path marks both metals ``live`` so the scheduler can post Telegram
-    updates. If the provider is unreachable the saved readings are returned with
-    ``live: False`` and nothing is sent, rather than sending an approximation.
-    """
     global _last_live_at
-
     live = _live_quote()
     if live:
         snapshot = {
@@ -225,7 +203,6 @@ def get_latest_snapshot() -> dict:
         }
     finally:
         conn.close()
-
 
 def get_open_close_delta(metal: str, family: str | None = None) -> dict:
     """Open/close delta for a metal symbol (XAU or XAG).
