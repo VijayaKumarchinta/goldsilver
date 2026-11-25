@@ -24,36 +24,27 @@ def format_price_message(snapshot: dict, event_label: str) -> str:
     silver = snapshot["metals"]["XAG"]
     gold_gram = Decimal(str(gold["inr_per_gram"]))
     silver_gram = Decimal(str(silver["inr_per_gram"]))
-    gold_oz = gold.get("usd_per_oz")
-    silver_oz = silver.get("usd_per_oz")
     usd_inr = snapshot["fx"].get("USD_INR", "—")
     updated = _ist_time(snapshot.get("captured_at") or gold.get("updated_at", ""))
     labels = {
-        "periodic_update": "Gold & Silver Price Update (India)",
-        "hourly_update": "Gold & Silver Price Update (India)",
-        "hourly": "Gold & Silver Price Update (India)",
-        "market_open": "Gold & Silver Market Open Update (India)",
-        "market_close": "Gold & Silver Market Close Update (India)",
-        "weekly_close": "Gold & Silver Weekly Close Update (India)",
+        "periodic_update": "Gold & Silver Update",
+        "hourly_update": "Gold & Silver Update",
+        "hourly": "Gold & Silver Update",
+        "market_open": "Market Open: Gold & Silver",
+        "market_close": "Market Close: Gold & Silver",
+        "weekly_close": "Weekly Close: Gold & Silver",
     }
-    title = labels.get(event_label, "Gold & Silver Price Update (India)")
+    title = labels.get(event_label, "Gold & Silver Update")
     gold_10g = gold_gram * Decimal("10")
     silver_10g = silver_gram * Decimal("10")
 
-    # Telegram uses MarkdownV2. Every literal punctuation character must be escaped
-    # so the message renders correctly in the group.
+    # Telegram uses MarkdownV2, so literal punctuation is escaped here.
     return _escape_markdown_v2(
         f"{title}\n\n"
-        f"Gold 24K: ₹{_number(gold_gram)} per gram "
-        f"(₹{_number(gold_10g)} per 10 grams)\n"
-        f"Silver 999: ₹{_number(silver_gram)} per gram "
-        f"(₹{_number(silver_10g)} per 10 grams)\n"
-        f"Source: {gold.get('source') or 'MCX futures'}; {silver.get('source') or 'MCX futures'}\n"
+        f"Gold 24K: ₹{_number(gold_gram)}/g (₹{_number(gold_10g)}/10g)\n"
+        f"Silver 999: ₹{_number(silver_gram)}/g (₹{_number(silver_10g)}/10g)\n"
         f"USD/INR: {_number(usd_inr)}\n"
-        f"International spot reference: Gold {_number(gold_oz)} USD/oz; "
-        f"Silver {_number(silver_oz)} USD/oz\n"
-        f"Checked: {updated}\n\n"
-        "MCX futures prices exclude GST and making charges; local retail rates differ."
+        f"Updated: {updated}"
     )
 
 

@@ -13,6 +13,7 @@ from app.api.health import health_bp
 from app.repositories.history import MAX_POINTS, _downsample
 from app.scheduler import manager
 from app.services import notification_dispatcher as dispatcher
+from app.services.message_formatter import format_price_message
 from app.services.rates import KARAT_FACTORS, STATE_DATA, purity_rows, state_rows
 
 
@@ -45,6 +46,28 @@ def test_state_rows_cover_every_configured_state():
     assert len(rows) == len(STATE_DATA)
     assert {row["state"] for row in rows} == {state for state, _ in STATE_DATA}
     assert all(row["diff_pct"] == "0.00" for row in rows)
+
+
+def test_price_message_is_short_and_keeps_the_key_numbers():
+    snapshot = {
+        "captured_at": "2026-11-25T14:06:00+00:00",
+        "metals": {
+            "XAU": {"inr_per_gram": "11991.80", "usd_per_oz": 3506.1, "source": "MCX GOLD"},
+            "XAG": {"inr_per_gram": "140.16", "usd_per_oz": 39.78, "source": "MCX SILVER"},
+        },
+        "fx": {"USD_INR": "92.22"},
+    }
+    message = format_price_message(snapshot, "periodic_update")
+
+    plain = message.replace("\\", "")
+    assert plain.startswith("Gold & Silver Update")
+    assert "Gold 24K" in plain and "11,991.80" in plain
+    assert "Silver 999" in plain and "140.16" in plain
+    assert "USD/INR" in plain and "92.22" in plain
+    assert "Updated" in plain
+    assert "COMEX" not in plain
+    assert "GST" not in plain
+    assert "Source" not in plain
 
 
 def test_dispatch_sends_to_chat_identifier_not_local_row_id(monkeypatch):
