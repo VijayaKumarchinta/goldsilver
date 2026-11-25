@@ -93,6 +93,15 @@ def on_price_update_ack(client_id, *args):
         )
 
 
+def _register_live_price_events(socketio):
+    """Register the Socket.IO events used by the bidirectional live stream.
+
+    Bound at app startup (when ``socketio`` exists) so the handler decorates
+    the same Socket.IO instance the broadcast uses.
+    """
+    socketio.on("live_price_update", on_price_update_from_client)
+
+
 def source_family(source) -> str:
     """Spot and estimate histories from earlier versions are kept apart from MCX rows."""
     s = (source or "").lower()
