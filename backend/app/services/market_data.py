@@ -142,18 +142,58 @@ def _market_open_now() -> bool:
     return t <= now_time <= t_close
 
 
+def _today_open_per_10g() -> dict[str, float]:
+    """First saved reading of the current IST day, per 10 g.
+
+    The dashboard compares the live close with this value to show the day's
+    move. A failure here must never take the live quote down, so it is
+    best-effort and returns an empty mapping when the DB is unavailable.
+    """
+    try:
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT DISTINCT ON (m.symbol) m.symbol, m.inr_per_gram "
+                "FROM goldbot.metal_prices m "
+                "JOIN goldbot.price_snapshots s ON s.id = m.snapshot_id "
+                "WHERE DATE(s.captured_at AT TIME ZONE 'Asia/Kolkata') "
+                "= (NOW() AT TIME ZONE 'Asia/Kolkata')::date "
+                "ORDER BY m.symbol, s.captured_at ASC"
+            )
+            return {
+                symbol: float(rate) * 10
+                for symbol, rate in cur.fetchall()
+                if rate is not None
+            }
+        finally:
+            conn.close()
+    except Exception:
+        log.exception("Could not load today's opening readings")
+        return {}
+
+
 def get_latest_snapshot() -> dict:
     global _last_live_at
     live = _live_quote()
     if live:
+        opens = _today_open_per_10g()
         snapshot = {
             "captured_at": datetime.now(timezone.utc).isoformat(),
             "base_currency": "USD",
             "output_currency": "INR",
             "market_open": _market_open_now(),
             "metals": {
-                "XAU": {**live["metals"]["XAU"], "live": True},
-                "XAG": {**live["metals"]["XAG"], "live": True},
+                "XAU": {
+                    **live["metals"]["XAU"],
+                    "live": True,
+                    "open_per_10g": opens.get("XAU"),
+                },
+                "XAG": {
+                    **live["metals"]["XAG"],
+                    "live": True,
+                    "open_per_10g": opens.get("XAG"),
+                },
             },
             "fx": {
                 "USD_INR": float(live["fx"]),

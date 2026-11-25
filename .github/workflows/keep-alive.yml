@@ -1,9 +1,16 @@
 name: Keep Render Service Awake
 
+# Render's free web service sleeps after ~15 minutes without inbound traffic.
+# When it sleeps, APScheduler stops and chart snapshots are missed, which is
+# why history had 30-minute gaps. GitHub's scheduled runs are best-effort, so
+# ping every 5 minutes and retry to stay inside the 15-minute idle window.
 on:
   schedule:
-    - cron: '*/10 * * * *'  # Every 10 minutes
-  workflow_dispatch:  # Allow manual trigger
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   ping:
@@ -11,8 +18,14 @@ jobs:
     steps:
       - name: Ping Render service
         run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://goldsilver.onrender.com/api/prices/health)
-          echo "Render service responded with status: $STATUS"
-          if [ "$STATUS" != "200" ]; then
-            echo "::warning::Render service returned $STATUS"
-          fi
+          for attempt in 1 2 3; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              --max-time 60 --retry 2 --retry-delay 10 \
+              https://goldsilver.onrender.com/api/prices/health)
+            echo "Attempt $attempt: Render service responded with $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "::warning::Render service did not return 200 after retries"

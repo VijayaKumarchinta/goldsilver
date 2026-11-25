@@ -19,9 +19,31 @@ every 5 minutes.
 - **Backend:** Python 3.14, Flask, Flask-SocketIO, Flask-CORS, APScheduler,
   SQLAlchemy-less PostgreSQL access via `psycopg2`, `requests`.
 - **Database:** PostgreSQL (`goldbot` schema) for snapshots, metal prices,
-  FX rates, destinations and delivery logs.
+  FX rates, destinations and delivery logs. The app uses exactly one database,
+  selected by `DATABASE_URL`; see "Data stores" below.
 - **Frontend:** Vue 3 (Composition API), Socket.IO client, ECharts, Vite.
 - **Deployment:** Render (Python + `requirements.txt`, `gunicorn`).
+
+---
+
+## Data stores and environments
+
+There is **one database per environment**, not one shared database:
+
+| Environment | `DATABASE_URL` source | What it contains |
+| --- | --- | --- |
+| Render (production) | Render Postgres `gold-silver-db`, injected from `backend/render.yaml` | The live dashboard and Telegram data |
+| Local development | `backend/.env` (in this workspace: `localhost/goldbot`) | Local-only test data |
+
+A reset or diagnostic run from this checkout affects the **local** database
+unless `DATABASE_URL` is explicitly overridden with the production URL. Check
+the target before any destructive SQL, and never assume a local script is
+operating on Render's data. All live ingestion (MCX/COMEX quotes) is written to
+the environment's single Postgres database: `price_snapshots`, `metal_prices`,
+`fx_rates`, `destinations`, and `notification_jobs`.
+
+The backend serves `frontend/dist`; `backend/static` is not mounted and was
+removed along with unused legacy service modules.
 
 ---
 
@@ -95,28 +117,17 @@ backend/
       market_data.py    # Live quote source, broadcast, feed_health()
       notification_dispatcher.py  # dispatch_pending(), create_sender()
       message_formatter.py        # MarkdownV2 Telegram message builder
-      snapshot.py       # (kept as a marker)
-      message_formatter.py        # (kept as a marker)
       rates.py          # Purity/state rate rows
-      conversion.py     # (kept as a marker)
-      fx_service.py     # (kept as a marker)
-      local_rates.py    # (kept as a marker)
-      validation.py     # (kept as a marker)
     repositories/
       prices.py         # save_snapshot(), get_latest()
       history.py        # get_chart_history()
       destinations.py   # list_enabled(), ensure_telegram_destination()
-      notifications.py  # (kept as a marker)
-      __init__.py
     scheduler/
       manager.py        # start_scheduler()/shutdown_scheduler(): 5-min chart + 30-min Telegram jobs
       jobs.py           # scheduled_periodic_update(), clear_all(), scheduled_capture()
     messaging/
       telegram.py       # TelegramSender
       base.py           # Sender ABC
-    sockets/
-      events.py         # (kept as a marker)
-      auth.py           # (kept as a marker)
     providers/
       metals_tradingview.py
     static/             # Built frontend assets
@@ -161,6 +172,12 @@ frontend/
 
 ## Known limitations
 
+- **Render free tier sleeps after ~15 minutes without traffic.** APScheduler
+  stops with the process, so 5-minute chart points are missed while asleep.
+  `.github/workflows/keep-alive.yml` pings `/api/prices/health` every 5 minutes
+  with retries to keep the instance awake; GitHub's scheduled runs are
+  best-effort, so occasional gaps are still possible. A paid always-on instance
+  removes this limitation.
 - The live price quote comes from a single source (TradingView scanner). If the
   endpoint is unreachable, the dashboard falls back to the last saved snapshot
   and flags the feed stale after `FEED_STALE_SECONDS`.
@@ -179,10 +196,11 @@ frontend/
   consider per-destination status aggregation.
 - `backend/app/services/message_formatter.py` — MarkdownV2 escaping is the
   reason Telegram renders correctly; keep it committed and validated.
-- `backend/app/api/prices.py` — legacy `GET /latest` still exists; it is used
-  by the dashboard for the initial snapshot but not for live updates.
-- `backend/app/api/schedule.py` — empty; it used to serve the notification
-  schedule and should be populated or removed once the UI no longer needs it.
+- `backend/app/api/prices.py` — `GET /latest` serves the initial REST snapshot;
+  live updates arrive over Socket.IO. Both now include `open_per_10g` so the
+  dashboard can show the day's move instead of a blank percentage.
 - `backend/app/repositories/history.py` — chart series; verify the per-metal
   rounding and the `estimated`/`open_per_10g` handling matches the frontend
   range selections.
+- `backend/app/api/health.py` — `/api/health/scheduler` reads the scheduler at
+  request time; it must remain a module lookup, not a `from ... import`.

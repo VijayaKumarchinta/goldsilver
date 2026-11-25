@@ -47,6 +47,11 @@ Telegram delivery stays on the 30-minute CronTrigger; the 5-minute job only
 records chart history. The browser requests the chart on the same 5-minute
 cadence and does not poll for live prices.
 
+> **Hosting caveat:** on Render's free tier the process sleeps after ~15 minutes
+> without inbound traffic, which stops APScheduler. The GitHub Actions
+> keep-alive workflow pings the service every 5 minutes so the 5-minute job can
+> run; without it, chart history shows 30-minute or larger gaps.
+
 ---
 
 ## 3. Every 30 minutes — the delivery tick
@@ -112,7 +117,11 @@ On boot, after the scheduler starts, `start_scheduler()` calls
    - returns a live snapshot with `metals.XAU.live = true` and
      `metals.XAG.live = true`, calling `set_price_event()`; or
    - falls back to the latest PostgreSQL snapshot with `live: false`.
-4. `set_price_event()` emits `socketio.emit("price_update", snapshot)` to all
+4. The live snapshot also carries `open_per_10g` per metal, read from the
+   day's first saved reading in the current database. This lets the dashboard
+   show the day's percentage move; if the lookup fails, the quote still flows
+   and the change indicator stays blank.
+5. `set_price_event()` emits `socketio.emit("price_update", snapshot)` to all
    connected Socket.IO clients. This is a fire-and-forget broadcast; the
    client owns reconnect and retry.
 
@@ -193,6 +202,36 @@ There is no polling of `/api/prices/latest` for live prices.
    +-- init Flask-SocketIO
    +-- register /api/health, /api/prices, /api/logs
    +-- mount frontend/dist at /
+   +-- ensure_telegram_destination()
+   |     +-- upsert TELEGRAM_CHAT_ID
+   |     +-- delete other telegram destinations (stale chats)
+   +-- @socketio.on("connect") -> emit current snapshot
+   +-- start_scheduler()
+   |     +-- BackgroundScheduler (UTC)
+   |     +-- CronTrigger */5 Asia/Kolkata -> chart history snapshot
+   |     +-- CronTrigger */30 Asia/Kolkata -> Telegram delivery
+   |     +-- start()
+   |     +-- scheduled_periodic_update()  <- one startup delivery check
+   |
+   v
+3. Browser connects -> on_connect -> price_update (last known state)
+   |
+   v
+4. Live quote arrives -> set_price_event -> price_update broadcast
+   +-- browser watch(latest) re-renders the dashboard
+   |
+   v
+5. Every 5 minutes -> scheduled_capture("chart_update") -> history snapshot
+   |
+   v
+6. Every 30 minutes -> scheduled_periodic_update -> dispatch_pending -> Telegram
+   +-- /api/logs shows sent/failed + retry status
+```
+
+> **Database target:** local development and Render use different
+> `DATABASE_URL` values. Inspect which host a script connects to before running
+> a reset or cleanup; a local script does not touch production unless the
+> production URL is explicitly exported.
 
 ## 10. Connection, sockets, data passing, and storage
 

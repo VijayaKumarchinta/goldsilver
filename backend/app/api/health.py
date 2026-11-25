@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify
 from app.extensions import get_db
-from app.scheduler.manager import _scheduler
+from app.scheduler import manager as scheduler_manager
 
 health_bp = Blueprint("health", __name__)
 
@@ -23,10 +23,13 @@ def health():
 
 @health_bp.route("/scheduler", methods=["GET"])
 def scheduler_status():
-    if not _scheduler:
+    # Read the module attribute at request time: start_scheduler() assigns it
+    # after this blueprint is imported, so a from-import would stay None.
+    scheduler = scheduler_manager._scheduler
+    if not scheduler:
         return jsonify({"running": False, "jobs": []}), 200
     jobs = [
         {"id": j.id, "next_run_time": str(j.next_run_time), "trigger": str(j.trigger)}
-        for j in _scheduler.get_jobs()
+        for j in scheduler.get_jobs()
     ]
-    return jsonify({"running": _scheduler.running, "jobs": jobs}), 200
+    return jsonify({"running": scheduler.running, "jobs": jobs}), 200
