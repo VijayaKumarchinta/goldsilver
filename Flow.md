@@ -32,15 +32,20 @@ minutes when Telegram receives a delivery.
 `backend/app/scheduler/manager.py` (`start_scheduler`):
 
 1. Creates one `BackgroundScheduler` with `timezone="UTC"`.
-2. Registers exactly one job:
+2. Registers two jobs:
+   - `id="chart_snapshot"`
+   - `CronTrigger(minute="*/5", second=0, timezone="Asia/Kolkata")`
+   - `scheduled_capture` with `"chart_update"` as the argument; it saves a
+     history snapshot every 5 minutes and queues no notifications.
    - `id="periodic_update"`
    - `CronTrigger(minute="*/30", second=0, timezone="Asia/Kolkata")`
    - `scheduled_periodic_update` as the callback
 3. Starts the scheduler.
-4. Logs `Registered job: periodic_update -> cron[minute='*/30', second='0']`.
+4. Logs each registered job.
 
-There is no 5-minute REST polling job and no browser-side `setInterval` for
-live prices. The only recurring process is this 30-minute CronTrigger.
+Telegram delivery stays on the 30-minute CronTrigger; the 5-minute job only
+records chart history. The browser requests the chart on the same 5-minute
+cadence and does not poll for live prices.
 
 ---
 

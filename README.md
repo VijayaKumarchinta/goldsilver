@@ -7,8 +7,9 @@ sends a 30-minute delivery of the same data to configured groups, and the
 dashboard shows live charts plus delivery logs.
 
 The service is a single Flask + Flask-SocketIO process. It serves the built
-frontend SPA, exposes REST APIs, and runs one APScheduler job: the 30-minute
-Telegram update. There is no browser-side polling for live prices.
+frontend SPA, exposes REST APIs, and runs two APScheduler jobs: a 5-minute
+chart snapshot (history only) and the 30-minute Telegram update. There is no
+browser-side polling for live prices; the chart is refetched every 5 minutes.
 
 ---
 
@@ -107,7 +108,7 @@ backend/
       notifications.py  # (kept as a marker)
       __init__.py
     scheduler/
-      manager.py        # start_scheduler()/shutdown_scheduler()
+      manager.py        # start_scheduler()/shutdown_scheduler(): 5-min chart + 30-min Telegram jobs
       jobs.py           # scheduled_periodic_update(), clear_all(), scheduled_capture()
     messaging/
       telegram.py       # TelegramSender
@@ -138,7 +139,12 @@ frontend/
   `set_price_event(snapshot)` which broadcasts `price_update` over Socket.IO to
   every connected dashboard client. The frontend reads the stream; it does not
   poll.
-- **30-minute delivery**: `backend/app/scheduler/manager.py` registers a single
+- **Chart snapshots**: `backend/app/scheduler/manager.py` also registers
+  `CronTrigger(minute="*/5", second=0, timezone="Asia/Kolkata")` running
+  `scheduled_capture("chart_update")`, which saves history every 5 minutes
+  without sending notifications. The dashboard refetches the chart on the
+  same cadence.
+- **30-minute delivery**: `backend/app/scheduler/manager.py` registers an
   APScheduler job (`CronTrigger(minute="*/30", second=0, timezone="Asia/Kolkata")`)
   running `scheduled_periodic_update()` from `backend/app/scheduler/jobs.py`.
   That function ensures the notification schema, dispatches pending delivery

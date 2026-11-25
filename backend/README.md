@@ -4,8 +4,8 @@ Backend code for the GoldSilver Bot dashboard.
 
 This directory is the Flask + Flask-SocketIO process. It serves the built
 frontend SPA at `/`, exposes the `/api/prices`, `/api/health`, and
-`/api/logs` endpoints, and runs one APScheduler job: the 30-minute Telegram
-delivery tick.
+`/api/logs` endpoints, and runs two APScheduler jobs: a 5-minute chart history
+snapshot and the 30-minute Telegram delivery tick.
 
 ## Run locally
 

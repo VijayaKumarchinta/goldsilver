@@ -1,4 +1,4 @@
-import { ref, onMounted, shallowRef, watch } from 'vue'
+import { ref, onMounted, onUnmounted, shallowRef, watch } from 'vue'
 import { useSocket } from './useSocket'
 
 const apiBase = (import.meta.env.VITE_API_BASE || '/api').replace(/\/+$/, '')
@@ -139,12 +139,32 @@ export function useApi() {
     loading.value = false
   }
 
-  function refreshChart(range) {
-    chartRange.value = range
-    return loadChart()
+  // The backend records a chart snapshot every 5 minutes, so refetch the
+  // selected range on the same cadence while the page stays open.
+  async function refreshChartData() {
+    chart.value = await loadChart()
   }
 
-  onMounted(loadAll)
+  function refreshChart(range) {
+    chartRange.value = range
+    return refreshChartData()
+  }
+
+  let chartTimer = null
+
+  onMounted(() => {
+    loadAll()
+    chartTimer = setInterval(() => {
+      refreshChartData().catch(() => {
+        // loadChart() already surfaced the error; retry on the next tick.
+      })
+    }, 5 * 60 * 1000)
+  })
+
+  onUnmounted(() => {
+    if (chartTimer) clearInterval(chartTimer)
+    chartTimer = null
+  })
 
   return {
     prices,
