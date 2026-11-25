@@ -142,7 +142,30 @@ export function useApi() {
   // The backend records a chart snapshot every 5 minutes, so refetch the
   // selected range on the same cadence while the page stays open.
   async function refreshChartData() {
-    chart.value = await loadChart()
+    try {
+      chart.value = await loadChart()
+    } catch {
+      // loadChart() already surfaced the failure through `error`; treat this
+      // refresh as best-effort so callers never see a rejection.
+    }
+  }
+
+  // The socket snapshot has no feed-health block, so the stale banner would
+  // otherwise only refresh on mount/reconnect. Poll the REST endpoint that
+  // exposes it on the same 5-minute tick.
+  async function refreshFeedHealth() {
+    try {
+      const snapshot = normalizeSnapshot(await getJson('/prices/latest', 'Feed health'))
+      if (!snapshot) return
+      if (prices.value) {
+        prices.value = { ...prices.value, feed: snapshot.feed ?? prices.value.feed ?? null }
+      } else {
+        prices.value = snapshot
+      }
+      marketOpen.value = Boolean(snapshot.market_open)
+    } catch {
+      // Keep the previous banner; the next tick retries.
+    }
   }
 
   function refreshChart(range) {
@@ -155,9 +178,8 @@ export function useApi() {
   onMounted(() => {
     loadAll()
     chartTimer = setInterval(() => {
-      refreshChartData().catch(() => {
-        // loadChart() already surfaced the error; retry on the next tick.
-      })
+      refreshChartData()
+      refreshFeedHealth()
     }, 5 * 60 * 1000)
   })
 

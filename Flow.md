@@ -27,7 +27,7 @@ minutes when Telegram receives a delivery.
 
 ---
 
-## 2. Scheduler: register the single recurring job
+## 2. Scheduler: register the recurring jobs
 
 `backend/app/scheduler/manager.py` (`start_scheduler`):
 
@@ -120,17 +120,20 @@ On boot, after the scheduler starts, `start_scheduler()` calls
 
 ## 6. Browser receives the live price
 
-`frontend/src/composables/useSocket.js` connects to the Socket.IO server.
-`frontend/src/composables/useApi.js` consumes `socket.latest`:
+`frontend/src/composables/useSocket.js` opens one shared Socket.IO connection
+and stores each `price_update` in a `latest` ref.
+`frontend/src/composables/useApi.js` consumes that ref:
 
-1. On `connect`, it emits `reconnect()` (an HTTP fallback refresh).
-2. `watch(socket.latest)` updates the dashboard quote cards, market-open flag
-   and feed status.
-3. The chart still loads history with `fetch('/api/prices/chart/<range>')`
-   because chart series come from the database, not the live broadcast.
+1. `useApi` watches `latest` and updates the quote cards, market-open flag and
+   feed status.
+2. It loads the REST snapshot, chart, logs and purity on mount, and reloads
+   them when the socket reconnects.
+3. The chart loads history with `fetch('<apiBase>/prices/chart/<range>')`
+   because chart series come from the database, not the live broadcast, and is
+   refetched every 5 minutes to match the `chart_snapshot` job. The same tick
+   refetches `/prices/latest` so the feed-stale banner stays current.
 
-The old 5-second REST polling of `/api/prices/latest` was removed at
-`frontend/src/composables/useApi.js`.
+There is no polling of `/api/prices/latest` for live prices.
 
 ---
 
@@ -158,7 +161,7 @@ The old 5-second REST polling of `/api/prices/latest` was removed at
 [market_data._live_quote] -> [market_data.set_price_event]
         |
         v
-[Flask-SocketIO broadcast: price_update] --> [Browser dashboard uses socket.latest]
+[Flask-SocketIO broadcast: price_update] --> [Browser dashboard watches useSocket().latest]
         |
         v
 [scheduler manager: CronTrigger */30] -> [scheduled_periodic_update]
@@ -198,29 +201,31 @@ The old 5-second REST polling of `/api/prices/latest` was removed at
 `frontend/src/composables/useSocket.js` opens the Socket.IO connection.
 `frontend/src/App.vue` (and `useApi`) consumes it.
 
-Line references in `frontend/src/composables/useSocket.js`:
+`frontend/src/composables/useSocket.js`:
 
-| Lines | What |
+| What | Detail |
 | --- | --- |
-| 9-12 | `apiBase` / `socketOrigin` — origin the client connects to |
-| 15-23 | `io(...)` — Socket.IO client; `transports: ['websocket', 'polling']`, `reconnection: true`, `reconnectionAttempts: 10` |
-| 29-36 | event handlers bound on `onMounted`: `connect`, `disconnect`, `price_update`, `connect_error` |
+| `apiBase` / `socketOrigin` | origin the client connects to (`VITE_API_BASE`, then the current origin) |
+| `io(...)` | Socket.IO client; `transports: ['websocket', 'polling']`, `reconnection: true`, `reconnectionAttempts: 10` |
+| listeners | `connect`, `disconnect`, `price_update`, `connect_error`, registered once at module load |
+| return value | `{ socket, latest, connected, error }` |
 
-Line references in `frontend/src/composables/useApi.js`:
+`frontend/src/composables/useApi.js`:
 
-| Lines | What |
+| What | Detail |
 | --- | --- |
-| 10 | `const socket = useSocket()` — creates the Socket.IO instance |
-| 17-27 | `watch(socket.connected, ...)` — reloads data once the socket is up |
-| 32-33 | `refreshChart(range)` → `loadChart()` — chart history over HTTP |
-| 36-56 | `loadAll()` — reads `socket.latest` (the live price broadcast), then `loadChart` / `loadLogs` / `loadPurity` |
+| `useSocket()` | reads the shared `latest` / `connected` refs |
+| `watch(connected)` | reloads data when the socket comes up |
+| `normalizeSnapshot()` | maps both the REST `gold`/`silver` and socket `metals.XAU`/`XAG` payloads onto one quote shape |
+| `refreshChart(range)` | fetches chart history and assigns it to `chart` |
+| `loadAll()` | loads `/prices/latest`, chart, `/logs`, `/prices/purity` |
 
 Key socket protocol:
 
 - The server broadcasts `socketio.emit("price_update", snapshot)`; the client receives it as the
-  `price_update` Socket.IO event, stored in `latest` (`useSocket.js:30`).
+  `price_update` Socket.IO event, stored in `latest`.
 - The chart is **not** part of the broadcast. It is fetched over plain HTTP:
-  `fetch('/api/prices/chart/<range>')` (`useApi.js:38`), because chart series come from PostgreSQL, not the live broadcast.
+  `fetch('<apiBase>/prices/chart/<range>')`, because chart series come from PostgreSQL, not the live broadcast.
 
 ### 10.2 Where the data is stored
 
@@ -259,10 +264,10 @@ market_data.set_price_event(snapshot)           <- stores _price_event (dict)
 socketio.emit("price_update", snapshot)         <- Flask-SocketIO broadcast to all clients
         |
         v
-useSocket.js:30 -> socket.on("price_update", handlePriceUpdate) -> latest.value = snapshot
+useSocket.js -> socket.on("price_update", ...) -> latest.value = snapshot
         |
         v
-useApi.js:10 watch(socket.connected) + watch(socket.latest)
+useApi.js -> watch(connected) + watch(latest)
         |
         v
 App.vue updates the quote cards / market-open flag / feed status
@@ -298,9 +303,10 @@ Notes:
 
 | Lines | Config |
 | --- | --- |
-| 12-14 | `BackgroundScheduler(timezone="UTC")` |
-| 19-22 | one job: `id="periodic_update"`, `CronTrigger(minute="*/30", second=0, timezone="Asia/Kolkata")` |
-| 24-26 | `start()`; logs `Registered job: periodic_update -> cron[minute='*/30', second='0']` |
+| `BackgroundScheduler(timezone="UTC")` | scheduler instance |
+| `id="chart_snapshot"` | `CronTrigger(minute="*/5", second=0, timezone="Asia/Kolkata")` → `scheduled_capture("chart_update")` |
+| `id="periodic_update"` | `CronTrigger(minute="*/30", second=0, timezone="Asia/Kolkata")` → `scheduled_periodic_update` |
+| `start()` | logs each registered job |
 
 ### 10.6 Startup order (what runs, in what sequence)
 
@@ -317,7 +323,8 @@ Notes:
    +-- @socketio.on("connect") -> sends current snapshot to new client
    +-- start_scheduler()
    |     +-- BackgroundScheduler
-   |     +-- one CronTrigger */30 Asia/Kolkata
+   |     +-- CronTrigger */5 Asia/Kolkata -> chart history snapshot
+   |     +-- CronTrigger */30 Asia/Kolkata -> Telegram delivery
    |     +-- start()
    |     +-- scheduled_periodic_update()  <- one-time first delivery at startup
    |
@@ -326,9 +333,12 @@ Notes:
    |
    v
 4. Live quote arrives -> set_price_event -> price_update broadcast
-   +-- browser watch(socket.latest) re-renders the dashboard
+   +-- browser watch(latest) re-renders the dashboard
    |
    v
-5. Every 30 minutes -> scheduled_periodic_update -> dispatch_pending -> Telegram
+5. Every 5 minutes -> scheduled_capture("chart_update") -> snapshot saved for history
+   |
+   v
+6. Every 30 minutes -> scheduled_periodic_update -> dispatch_pending -> Telegram
    +-- /api/logs shows sent/failed + retry status
 ```
