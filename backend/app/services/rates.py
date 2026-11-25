@@ -1,5 +1,7 @@
 from decimal import Decimal, ROUND_HALF_UP
 
+
+
 KARAT_FACTORS = {
     "24K": Decimal("1.000"),
     "22K": Decimal("0.916"),

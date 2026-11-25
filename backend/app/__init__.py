@@ -1,16 +1,16 @@
 import logging
 from pathlib import Path
-from flask import Flask, abort, send_from_directory
+from flask import Flask, Response, abort, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from app.config import Config
 from app.api.prices import prices_bp
 from app.api.health import health_bp
-from app.services.market_data import _json_safe, _register_live_price_events
 from app.api.logs import logs_bp
+from app.api.prices import prices_bp
 from app.repositories.destinations import ensure_telegram_destination
-from app.services.market_data import get_latest_snapshot
 from app.scheduler.manager import start_scheduler
+from app.services.market_data import _json_safe, get_latest_snapshot, _register_live_price_events
 
 logging.basicConfig(
     level=logging.INFO,
@@ -91,9 +91,6 @@ def create_app(start_sched: bool = True):
             _initial_price(snap)
         except Exception:
             logging.exception("Failed to send initial price on connect")
-
-    # Expose the bidirectional live-price events (broadcast with ack + the
-    # handler that receives deltas pushed up by the dashboard).
     _register_live_price_events(socketio)
 
     if start_sched:

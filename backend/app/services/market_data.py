@@ -1,15 +1,13 @@
+import logging
 import threading
 from datetime import datetime, timezone, time
 from decimal import Decimal
-from app.extensions import get_db
-import logging
-from app.config import Config
-from app.messaging.base import Sender
-from app.providers import metals_tradingview
-from app import socketio
-from app.services import notification_dispatcher as nd
 from zoneinfo import ZoneInfo
 
+from app.config import Config
+from app.extensions import get_db
+from app.messaging.base import Sender
+from app.providers import metals_tradingview
 log = logging.getLogger(__name__)
 _BOOT_AT = datetime.now(timezone.utc)
 _last_live_at: datetime | None = None
@@ -55,11 +53,11 @@ def set_price_event(snapshot: dict | None):
     with _broadcast_lock:
         _price_event["last"] = snapshot
         _price_event["last_at"] = datetime.now(timezone.utc)
-        global _last_live_at
         _last_live_at = _price_event["last_at"]
 
     try:
-        socketio.emit(
+        _sio = _get_socketio()
+        _sio.emit(
             "price_update",
             _json_safe(snapshot) if snapshot is not None else None,
             callback=on_price_update_ack,
@@ -67,7 +65,6 @@ def set_price_event(snapshot: dict | None):
         )
     except Exception:
         log.exception("price event broadcast failed")
-
 
 def on_price_update_ack(client_id, *args):
     """Called by the Socket.IO server when the client acks `price_update`.
@@ -78,18 +75,13 @@ def on_price_update_ack(client_id, *args):
     pushes live price deltas back with the same protocol.
     """
     log.debug("price_update ack from socket=%s payload=%r", client_id, args)
-    # Register a Socket.IO event that the dashboard uses to push live price
+    # Register the Socket.IO event that the dashboard uses to push live price
     # deltas back up to the server (the dashboard is read-write, not just a
     # one-way consumer).
-    _register_live_price_events(socketio)
-    """Receive a live price delta from the browser.
-
-    ``payload`` is the live quote pushed by useSocket.js.  The server
-    records the client socket id, the payload, and the time it arrived, so
-    the dashboard can detect injected prices, staleness and spoofing.
-    """
+    _register_live_price_events(_get_socketio())
     try:
-        nd.record_live_price_update(socket_id, payload)
+        _nd = _get_notification_dispatcher()
+        _nd.record_live_price_update(socket_id, payload)
         log.debug(
             "received live price update from socket=%s",
             socket_id,
@@ -99,18 +91,6 @@ def on_price_update_ack(client_id, *args):
             "failed to record live price update from socket=%s",
             socket_id,
         )
-
-
-def _register_live_price_events(socketio):
-    """Register the Socket.IO events used by the bidirectional live stream.
-
-    Bound at app startup (when ``socketio`` exists) so the handler decorates
-    the same Socket.IO instance the broadcast uses.
-    """
-
-    @socketio.on("price_update")
-    def price_update_handler(socket_id, payload):
-        _on_price_update_from_client(socket_id, payload)
 
 
 def source_family(source) -> str:

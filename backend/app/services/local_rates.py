@@ -1,20 +1,7 @@
 import requests
+import threading
+import time
 from app.config import Config
-
-
-_cache = {}
-_cache_lock: object | None = None  # set lazily
-
-
-def _cache_lock_for() -> object:
-    global _cache_lock
-    if _cache_lock is None:
-        _cache_lock = threading.Lock()
-    return _cache_lock
-
-
-def _now_epoch() -> float:
-    return time.time()
 
 
 def is_configured() -> bool:
@@ -30,7 +17,7 @@ def get_local_market_reference(city: str | None = None) -> dict:
     not change the returned rates.
     """
     key = ("local", city or "India")
-    now = _now_epoch()
+    now = time.time()
 
     with _cache_lock_for():
         entry = _cache.get(key)

@@ -1,12 +1,13 @@
 import logging
-from app.config import Config
-from app.scheduler.jobs import scheduled_periodic_update
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from app.config import Config
+from app.scheduler.jobs import scheduled_periodic_update
+
 log = logging.getLogger(__name__)
 _scheduler = None
-
 
 def start_scheduler():
     global _scheduler
@@ -37,10 +38,6 @@ def start_scheduler():
         log.info("Registered job: %s -> %s", name, trigger)
     _scheduler.start()
 
-    # Guard so a misconfigured deploy (e.g. wrong bot token in Render env)
-    # never loops and never emits 400s to a wrong chat. The check below is
-    # informational: the actual delivery determinism lives in
-    # scheduled_periodic_update().
     if not Config.TELEGRAM_BOT_TOKEN:
         log.warning(
             "Telegram delivery disabled at startup: TELEGRAM_BOT_TOKEN is not configured"

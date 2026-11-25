@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta, timezone
-from psycopg2.extras import RealDictCursor
+
 from app.extensions import get_db
-from app.repositories.destinations import list_enabled
 from app.messaging.telegram import TelegramSender
+from app.repositories.destinations import list_enabled
 from app.services.message_formatter import format_price_message
 
 MAX_ATTEMPTS = 3
