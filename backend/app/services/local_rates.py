@@ -4,7 +4,7 @@ from app.config import Config
 
 
 _cache = {}
-_cache_lock = None  # set lazily
+_cache_lock: object | None = None  # set lazily
 
 
 def _cache_lock_for() -> object:

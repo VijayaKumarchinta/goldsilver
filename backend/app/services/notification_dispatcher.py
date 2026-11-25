@@ -11,12 +11,6 @@ _hourly_schema_ready = False
 
 
 def create_sender() -> TelegramSender:
-    """Build the Telegram sender the scheduler uses.
-
-    The scheduler is a plain APScheduler job with no framework request scope,
-    so this factory keeps it from reaching for a module-level singleton that a
-    long-running worker might have already replaced.
-    """
     return TelegramSender()
 
 
@@ -46,7 +40,6 @@ def ensure_hourly_notification_schema():
         _hourly_schema_ready = True
     finally:
         conn.close()
-
 
 def get_notification_status() -> dict:
     ensure_hourly_notification_schema()
@@ -100,7 +93,6 @@ def get_notification_status() -> dict:
     finally:
         conn.close()
 
-
 def has_scheduled_slot(scheduled_for: datetime) -> bool:
     conn = get_db()
     try:
@@ -119,7 +111,6 @@ def has_scheduled_slot(scheduled_for: datetime) -> bool:
         return cur.fetchone()[0]
     finally:
         conn.close()
-
 
 def create_jobs(
     snapshot_id: int,
@@ -193,14 +184,6 @@ def _load_snapshot(cur, snapshot_id: int) -> dict:
     }
 
 def dispatch_pending(sender: TelegramSender | None = None, limit: int = 20) -> dict:
-    """Process jobs that are due. Respects backoff and max attempts.
-
-    Returns a result dict the caller can log and / or emit over Socket.IO so
-    every connected dashboard client sees the delivery status in real time.
-    ``sender`` is injected (the ``TelegramSender``), so the dispatcher never
-    dials the API endpoint directly and every retry path is a clean, auditable
-    database transaction.
-    """
     ensure_hourly_notification_schema()
     conn = get_db()
     results = {"sent": 0, "failed": 0, "retry_scheduled": 0, "exhausted": 0}
@@ -234,6 +217,7 @@ def dispatch_pending(sender: TelegramSender | None = None, limit: int = 20) -> d
             snap = _load_snapshot(cur, job["snapshot_id"])
             text = format_price_message(snap, job["event_type"])
             outcome = sender.send(job["destination_id"], text)
+            new_attempts = job["attempts"] + 1
 
             if outcome.get("ok"):
                 cur.execute(
