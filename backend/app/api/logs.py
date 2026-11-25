@@ -58,6 +58,7 @@ def list_logs():
                 "destination": r["label"] or r["identifier"],
                 "platform": r["channel"],
                 "status": r["status"],
+                "attempts": r["attempts"],
                 "created_at": _iso(r["created_at"]),
                 "updated_at": _iso(r["updated_at"]),
                 "scheduled_for": _iso(r["scheduled_for"]),

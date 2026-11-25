@@ -9,6 +9,7 @@ from decimal import Decimal
 
 from flask import Flask
 
+from app.api import prices as prices_api
 from app.api.health import health_bp
 from app.repositories.history import MAX_POINTS, _downsample
 from app.scheduler import manager
@@ -46,6 +47,40 @@ def test_state_rows_cover_every_configured_state():
     assert len(rows) == len(STATE_DATA)
     assert {row["state"] for row in rows} == {state for state, _ in STATE_DATA}
     assert all(row["diff_pct"] == "0.00" for row in rows)
+
+
+def test_latest_does_not_label_a_saved_fallback_as_live(monkeypatch):
+    fallback = {
+        "captured_at": "2026-11-25T08:00:00+00:00",
+        "market_open": True,
+        "metals": {
+            "XAU": {
+                "inr_per_gram": 11991.8,
+                "usd_per_oz": 3481.6,
+                "open_per_10g": 120000.0,
+                "updated_at": "2026-11-25T08:00:00+00:00",
+                "source": "MCX GOLD",
+                "live": False,
+            },
+            "XAG": {
+                "inr_per_gram": 140.16,
+                "usd_per_oz": 39.24,
+                "open_per_10g": 1400.0,
+                "updated_at": "2026-11-25T08:00:00+00:00",
+                "source": "MCX SILVER",
+                "live": False,
+            },
+        },
+        "fx": {"USD_INR": 92.22},
+    }
+    monkeypatch.setattr(prices_api, "get_latest_snapshot", lambda: fallback)
+
+    app = Flask(__name__)
+    app.register_blueprint(prices_api.prices_bp, url_prefix="/api/prices")
+    payload = app.test_client().get("/api/prices/latest").get_json()
+
+    assert payload["gold"]["live"] is False
+    assert payload["silver"]["live"] is False
 
 
 def test_price_message_is_short_and_keeps_the_key_numbers():

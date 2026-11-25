@@ -113,8 +113,12 @@ function buildOption() {
         const point = params[0].value
         const stamp = Array.isArray(point) ? point[0] : (params[0].axisValue ?? params[0].name ?? '')
         const t = formatDateTime(stamp)
-        const goldVal = Array.isArray(goldParam?.value) ? goldParam.value[1] : (goldParam?.value ?? 0)
-        const silverVal = Array.isArray(silverParam?.value) ? silverParam.value[1] : (silverParam?.value ?? 0)
+        const seriesValue = (param) => {
+          const raw = Array.isArray(param?.value) ? param.value[1] : param?.value
+          return Number(raw ?? 0)
+        }
+        const goldVal = seriesValue(goldParam)
+        const silverVal = seriesValue(silverParam)
         return `<div style="font-size:12px;padding:4px 2px">
           <div style="font-weight:700;margin-bottom:6px">${t} IST</div>
           <div style="color:${goldLabel}">Gold futures * Rs${goldVal.toLocaleString('en-IN')} / 10 g</div>

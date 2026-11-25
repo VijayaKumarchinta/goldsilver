@@ -26,8 +26,10 @@ def latest():
     silver_10g = silver["inr_per_gram"] * 10 if silver.get("inr_per_gram") is not None else None
     gold_open = gold.get("open_per_10g")
     silver_open = silver.get("open_per_10g")
-    gold_live = gold.get("usd_per_oz") is not None
-    silver_live = silver.get("usd_per_oz") is not None
+    # Use the snapshot's own live flag. A saved row also has usd_per_oz, so
+    # testing that field alone labelled stale DB fallbacks as live.
+    gold_live = bool(gold.get("live"))
+    silver_live = bool(silver.get("live"))
 
     return jsonify({
         "gold": {
