@@ -37,6 +37,19 @@ def start_scheduler():
         log.info("Registered job: %s -> %s", name, trigger)
     _scheduler.start()
 
+    # Guard so a misconfigured deploy (e.g. wrong bot token in Render env)
+    # never loops and never emits 400s to a wrong chat. The check below is
+    # informational: the actual delivery determinism lives in
+    # scheduled_periodic_update().
+    if not Config.TELEGRAM_BOT_TOKEN:
+        log.warning(
+            "Telegram delivery disabled at startup: TELEGRAM_BOT_TOKEN is not configured"
+        )
+    elif not Config.TELEGRAM_CHAT_ID:
+        log.warning(
+            "Telegram delivery disabled at startup: TELEGRAM_CHAT_ID is not configured"
+        )
+
     try:
         result = scheduled_periodic_update()
         log.info("Startup Telegram update: %s", result)
@@ -44,7 +57,6 @@ def start_scheduler():
         log.exception("Startup Telegram update failed")
 
     return _scheduler
-
 
 def shutdown_scheduler():
     global _scheduler
