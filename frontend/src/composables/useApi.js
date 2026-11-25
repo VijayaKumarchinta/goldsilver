@@ -1,8 +1,6 @@
 import { ref, onMounted, onUnmounted, shallowRef, watch } from 'vue'
 import { useSocket } from './useSocket'
 
-// Single source of truth: the live MCX quote pushed by the backend over
-// Socket.IO. There is no REST polling anywhere in the dashboard.
 export function useApi() {
   const prices = shallowRef(null)
   const chart = shallowRef(null)
@@ -14,13 +12,40 @@ export function useApi() {
   const chartRange = ref('1D')
   const socket = useSocket()
 
-  // connected defaults to false until the broker actually accepts the
-  // WebSocket. The dashboard shows a loading state, not a false "live" flag.
+  // Keep the live price stream alive and push live deltas back to the
+  // server so the dashboard behaves as a two-way live stream.
   watch(
     () => socket.connected,
     (connected) => {
       if (connected && prices.value && !loading.value) {
         loadAll()
+      }
+    },
+  )
+
+  async function sendPriceDelta(client, snapshot) {
+    const delta = {
+      captured_at: snapshot.captured_at,
+      market_open: snapshot.market_open,
+      metals: {
+        XAU: snapshot.metals.XAU,
+        XAG: snapshot.metals.XAG,
+      },
+      fx: snapshot.fx,
+      source: 'dashboard',
+      client_id: client?.id || null,
+    }
+    return socket.sendPriceUpdate(delta)
+  }
+
+  // If the server acked a push, log it locally and keep the price stream
+  // healthy by refreshing the chart on the next live quote.
+  watch(
+    () => socket.acked,
+    (acked) => {
+      if (acked && prices.value) {
+        // no-op: the server ack is handled by the dashboard; the next
+        // live price_update keeps the stream flowing.
       }
     },
   )
@@ -124,5 +149,6 @@ export function useApi() {
     loadAll,
     refreshChart,
     reconnect,
+    sendPriceDelta,
   }
 }

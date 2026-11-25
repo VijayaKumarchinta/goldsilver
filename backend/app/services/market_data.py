@@ -4,7 +4,11 @@ from decimal import Decimal
 from app.extensions import get_db
 import logging
 from app.config import Config
+from app.messaging.base import Sender
 from app.providers import metals_tradingview
+from app import socketio
+from app.services import notification_dispatcher as nd
+from zoneinfo import ZoneInfo
 
 log = logging.getLogger(__name__)
 _BOOT_AT = datetime.now(timezone.utc)
@@ -20,20 +24,93 @@ def subscribe_price_event():
         return dict(_price_event)
 
 
+def _json_safe(obj):
+    """Recursively convert Decimal (and other non-JSON types) to a JSON-safe Python type.
+
+    The snapshot is an arbitrarily nested dict/list emitted straight to every
+    Socket.IO client.  The decimal fields come out of PostgreSQL raw, so each
+    leaf is coerced to float; mappings and sequences are walked instead of
+    rejected.
+    """
+    if isinstance(obj, Decimal):
+        return float(obj)
+    if isinstance(obj, bytes):
+        return obj.decode("utf-8", errors="replace")
+    if isinstance(obj, dict):
+        return {key: _json_safe(value) for key, value in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(item) for item in obj]
+    if isinstance(obj, (datetime,)):
+        return obj.isoformat() if obj.tzinfo else obj.isoformat()
+    return obj
+
+
 def set_price_event(snapshot: dict | None):
-    """Record the newest live market snapshot and notify every Socket.IO client."""
+    """Record the newest live market snapshot and notify every Socket.IO client.
+
+    The snapshot is serialised to JSON first so ``Decimal`` values (which come
+    straight out of PostgreSQL) are converted to ``float`` and can be sent
+    over the Socket.IO payload.
+    """
     with _broadcast_lock:
         _price_event["last"] = snapshot
         _price_event["last_at"] = datetime.now(timezone.utc)
+        global _last_live_at
         _last_live_at = _price_event["last_at"]
 
-
     try:
-        from app import socketio
-
-        socketio.emit("price_update", snapshot)
+        socketio.emit(
+            "price_update",
+            _json_safe(snapshot) if snapshot is not None else None,
+            callback=on_price_update_ack,
+            namespace="/",
+        )
     except Exception:
         log.exception("price event broadcast failed")
+
+
+def on_price_update_ack(client_id, *args):
+    """Called by the Socket.IO server when the client acks `price_update`.
+
+    ``client_id`` is the socket ID that acknowledged the message.  The
+    payload (snapshot) is intentionally ignored here: the server's job is
+    only to prove delivery.  The client owns reconnection/retry and later
+    pushes live price deltas back with the same protocol.
+    """
+    log.debug("price_update ack from socket=%s payload=%r", client_id, args)
+    # Register a Socket.IO event that the dashboard uses to push live price
+    # deltas back up to the server (the dashboard is read-write, not just a
+    # one-way consumer).
+    _register_live_price_events(socketio)
+    """Receive a live price delta from the browser.
+
+    ``payload`` is the live quote pushed by useSocket.js.  The server
+    records the client socket id, the payload, and the time it arrived, so
+    the dashboard can detect injected prices, staleness and spoofing.
+    """
+    try:
+        nd.record_live_price_update(socket_id, payload)
+        log.debug(
+            "received live price update from socket=%s",
+            socket_id,
+        )
+    except Exception:
+        log.exception(
+            "failed to record live price update from socket=%s",
+            socket_id,
+        )
+
+
+def _register_live_price_events(socketio):
+    """Register the Socket.IO events used by the bidirectional live stream.
+
+    Bound at app startup (when ``socketio`` exists) so the handler decorates
+    the same Socket.IO instance the broadcast uses.
+    """
+
+    @socketio.on("price_update")
+    def price_update_handler(socket_id, payload):
+        _on_price_update_from_client(socket_id, payload)
 
 
 def source_family(source) -> str:
@@ -100,7 +177,6 @@ def feed_health(now: datetime | None = None) -> dict:
 
 def _market_open_now() -> bool:
     """True during IST market hours (09:00-23:55 Mon-Fri)."""
-    from zoneinfo import ZoneInfo
     now = datetime.now(ZoneInfo("Asia/Kolkata"))
     t = time(9, 0)
     t_close = time(23, 55)

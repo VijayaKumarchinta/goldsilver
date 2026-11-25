@@ -1,6 +1,5 @@
 import logging
 from app.config import Config
-
 from app.scheduler.jobs import scheduled_periodic_update
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger

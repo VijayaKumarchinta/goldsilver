@@ -6,6 +6,7 @@ from flask_socketio import SocketIO
 from app.config import Config
 from app.api.prices import prices_bp
 from app.api.health import health_bp
+from app.services.market_data import _json_safe, _register_live_price_events
 from app.api.logs import logs_bp
 from app.repositories.destinations import ensure_telegram_destination
 from app.services.market_data import get_latest_snapshot
@@ -66,7 +67,6 @@ def create_app(start_sched: bool = True):
 
         @app.route("/_debug/dist")
         def debug_dist():
-            from flask import Response
             return Response(
                 f"dist={dist}\n"
                 f"is_dir={dist.is_dir()}\n"
@@ -76,13 +76,25 @@ def create_app(start_sched: bool = True):
             )
 
     ensure_telegram_destination()
+
+    def _initial_price(snap):
+        try:
+            socketio.emit("price_update", _json_safe(snap), namespace="/")
+        except Exception:
+            logging.exception("Failed to send initial price on connect")
+
     @socketio.on("connect")
-    def on_connect():
+    def on_connect(socket_id, auth=None):
+        """Flask-SocketIO calls the connect handler with (socket_id, auth); accept both."""
         try:
             snap = get_latest_snapshot()
-            socketio.emit("price_update", snap)
-        except Exception as e:
-            logging.exception("Failed to send initial price on connect: %s", e)
+            _initial_price(snap)
+        except Exception:
+            logging.exception("Failed to send initial price on connect")
+
+    # Expose the bidirectional live-price events (broadcast with ack + the
+    # handler that receives deltas pushed up by the dashboard).
+    _register_live_price_events(socketio)
 
     if start_sched:
         start_scheduler()

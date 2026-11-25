@@ -7,6 +7,8 @@ from app.services.market_data import (
 )
 from app.repositories.history import get_chart_history
 from app.services.rates import purity_rows, state_rows
+from app.services.market_data import _market_open_now
+from app.services.market_data import _market_open_now
 
 prices_bp = Blueprint("prices", __name__)
 
@@ -156,7 +158,6 @@ def destinations():
 @prices_bp.route("/health", methods=["GET"])
 def health_check():
     """Lightweight health check. Matches HTML reference market status."""
-    from app.services.market_data import _market_open_now
     return jsonify({
         "status": "ok",
         "market_open": _market_open_now(),

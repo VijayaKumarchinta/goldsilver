@@ -2,6 +2,7 @@ from datetime import timedelta
 from decimal import Decimal
 from psycopg2.extras import RealDictCursor
 from app.extensions import get_db
+from app.services.market_data import _FAMILY_SQL, source_family
 
 
 def get_chart_history(range_val: str = "7D") -> dict:
@@ -29,7 +30,6 @@ def get_chart_history(range_val: str = "7D") -> dict:
             interval = "30 days"
             limit = 900
 
-        from app.services.market_data import _FAMILY_SQL, source_family
 
         # Pick the same family the current view is built from so the
         # chart never mixes two different providers into one trace.

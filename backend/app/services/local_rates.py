@@ -1,4 +1,3 @@
-import time
 import requests
 from app.config import Config
 
@@ -10,7 +9,6 @@ _cache_lock: object | None = None  # set lazily
 def _cache_lock_for() -> object:
     global _cache_lock
     if _cache_lock is None:
-        import threading
         _cache_lock = threading.Lock()
     return _cache_lock
 

@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify
 from app.extensions import get_db
+from app.scheduler.manager import _scheduler
 
 health_bp = Blueprint("health", __name__)
 
@@ -22,7 +23,6 @@ def health():
 
 @health_bp.route("/scheduler", methods=["GET"])
 def scheduler_status():
-    from app.scheduler.manager import _scheduler
     if not _scheduler:
         return jsonify({"running": False, "jobs": []}), 200
     jobs = [

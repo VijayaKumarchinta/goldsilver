@@ -63,7 +63,6 @@ def scheduled_capture(event_type: str):
         log.exception("Scheduled job failed for %s: %s", event_type, e)
         raise
 
-
 def scheduled_periodic_update():
     log.info("Checking whether the 30-minute Telegram update is due")
     try:

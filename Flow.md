@@ -264,6 +264,7 @@ App.vue updates the quote cards / market-open flag / feed status
 ```
 
 Notes:
+
 - The server does **not** wait for a client acknowledgment (`socketio.emit` is fire-and-forget;
   `useSocket.js` owns reconnection/retry).
 - The client only *listens*; it never POSTs live prices back to the server.
