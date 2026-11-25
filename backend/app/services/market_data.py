@@ -142,7 +142,10 @@ def get_latest_snapshot() -> dict:
             "base_currency": "USD",
             "output_currency": "INR",
             "market_open": _market_open_now(),
-            "metals": live["metals"],
+            "metals": {
+                "XAU": {**live["metals"]["XAU"], "live": True},
+                "XAG": {**live["metals"]["XAG"], "live": True},
+            },
             "fx": {
                 "USD_INR": float(live["fx"]),
                 "FX_SOURCE": "TradingView",
