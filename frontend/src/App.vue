@@ -95,7 +95,8 @@ const marketStatusText = computed(() => {
 })
 const providerName = computed(() => liveData.value?.XAU?.source || 'MCX futures')
 const usdInr = computed(() => {
-  const rate = Number(liveData.value?.fx?.USD_INR)
+  // `liveData` is the metals map; the FX rate lives on the snapshot itself.
+  const rate = Number(prices.value?.fx?.USD_INR)
   return Number.isFinite(rate) && rate > 0 ? rate.toFixed(4) : '-'
 })
 const telegramStatus = computed(() => {

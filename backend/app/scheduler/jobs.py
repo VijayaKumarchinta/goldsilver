@@ -83,7 +83,11 @@ def scheduled_periodic_update():
         dispatch_pending(sender=create_sender())
         status = get_notification_status()
         if status["last_periodic_status"] in {"pending", "sending"}:
-            return {"due": False, "reason": "notification_pending"}
+            return {
+                "due": False,
+                "reason": "notification_pending",
+                "next_send_at": status["next_send_at"],
+            }
 
         now = datetime.now(timezone.utc)
         baseline = max(

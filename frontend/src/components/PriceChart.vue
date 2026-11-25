@@ -23,8 +23,12 @@ function buildOption() {
   const goldLabel = dark ? '#e2bf79' : '#815515'
   const silverLabel = dark ? '#b5beca' : '#555f6e'
 
-  const goldSeries = props.goldData.map((v, i) => [props.labels[i] || '', v])
-  const silverSeries = props.silverData.map((v, i) => [props.labels[i] || '', v])
+  // A time axis keeps real gaps (for example while the free instance slept)
+  // proportional. A category axis gives a 5-minute and a 40-minute gap the
+  // same width and distorts the trend.
+  const pointTime = (i) => parseDate(props.labels[i])?.getTime() ?? props.labels[i]
+  const goldSeries = props.goldData.map((v, i) => [pointTime(i), v])
+  const silverSeries = props.silverData.map((v, i) => [pointTime(i), v])
 
   if (!goldSeries.length) {
     return null
@@ -47,7 +51,8 @@ function buildOption() {
   const silverRange = rangeFor(numeric(silverSeries), 100, 0.5)
 
   function parseDate(value) {
-    const date = new Date(String(value).replace(' ', 'T'))
+    if (value === null || value === undefined) return null
+    const date = new Date(Number.isFinite(value) ? value : String(value).replace(' ', 'T'))
     return Number.isNaN(date.getTime()) ? null : date
   }
 
@@ -76,30 +81,17 @@ function buildOption() {
     })
   }
 
-  function formatAxisLabel(value, seriesType) {
-    const date = parseDate(value)
-    if (!date) return value
-    const hasAdjacent = (idx) => {
-      const prev = props.labels[idx - 1]
-      const next = props.labels[idx + 1]
-      if (!prev || !next) return true
-      const prevDate = parseDate(prev)
-      const nextDate = parseDate(next)
-      if (!prevDate || !nextDate) return true
-      const diffMs = (nextDate - prevDate) / 2
-      return diffMs > 3 * 3600 * 1000
-    }
-    const idx = props.labels.indexOf(value)
-    if (idx === props.labels.length - 1) return formatTime(value)
-    if (!hasAdjacent(idx)) return ''
-    if (seriesType === 'date') {
-      return date.toLocaleDateString('en-IN', {
-        day: '2-digit',
-        month: 'short',
-        timeZone: 'Asia/Kolkata',
-      })
-    }
-    return formatTime(value)
+  const firstTime = parseDate(props.labels[0])
+  const lastTime = parseDate(props.labels[props.labels.length - 1])
+  const spanMs = firstTime && lastTime ? lastTime.getTime() - firstTime.getTime() : 0
+  const showDate = spanMs > 36 * 3600 * 1000
+
+  function formatAxisLabel(value) {
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return ''
+    return date.toLocaleString('en-IN', showDate
+      ? { day: '2-digit', month: 'short', timeZone: 'Asia/Kolkata' }
+      : { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })
   }
 
   return {
@@ -118,7 +110,9 @@ function buildOption() {
         if (!params || !params.length) return ''
         const goldParam = params.find((item) => item.seriesName === 'Gold futures (Rs / 10 g)')
         const silverParam = params.find((item) => item.seriesName === 'Silver futures (Rs / g)')
-        const t = formatDateTime(params[0].axisValue || params[0].name || '')
+        const point = params[0].value
+        const stamp = Array.isArray(point) ? point[0] : (params[0].axisValue ?? params[0].name ?? '')
+        const t = formatDateTime(stamp)
         const goldVal = Array.isArray(goldParam?.value) ? goldParam.value[1] : (goldParam?.value ?? 0)
         const silverVal = Array.isArray(silverParam?.value) ? silverParam.value[1] : (silverParam?.value ?? 0)
         return `<div style="font-size:12px;padding:4px 2px">
@@ -129,16 +123,15 @@ function buildOption() {
       },
     },
     xAxis: {
-      type: 'category',
-      data: props.labels,
+      type: 'time',
       axisLine: { lineStyle: { color: axisLine } },
       axisTick: { show: false },
       axisLabel: {
         color: axisLabel,
         fontSize: 11,
         fontFamily: 'Segoe UI, Arial, system-ui, sans-serif',
-        interval: 'auto',
-        formatter: (value) => formatAxisLabel(value, 'date'),
+        hideOverlap: true,
+        formatter: (value) => formatAxisLabel(value),
       },
       splitLine: { show: false },
     },
