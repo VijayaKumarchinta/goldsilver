@@ -5,6 +5,7 @@ the scheduler health contract that regressed when the blueprint imported
 ``_scheduler`` by value.
 """
 
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from flask import Flask
@@ -14,6 +15,7 @@ from app.api.health import health_bp
 from app.repositories.history import MAX_POINTS, _downsample
 from app.scheduler import manager
 from app.services import notification_dispatcher as dispatcher
+from app.services.notification_dispatcher import _next_cron_slot
 from app.services.message_formatter import format_price_message
 from app.services.rates import KARAT_FACTORS, STATE_DATA, purity_rows, state_rows
 
@@ -47,6 +49,18 @@ def test_state_rows_cover_every_configured_state():
     assert len(rows) == len(STATE_DATA)
     assert {row["state"] for row in rows} == {state for state, _ in STATE_DATA}
     assert all(row["diff_pct"] == "0.00" for row in rows)
+
+
+def test_next_send_is_aligned_to_a_real_cron_tick():
+    assert _next_cron_slot(datetime(2026, 11, 25, 14, 6, tzinfo=timezone.utc)) == datetime(
+        2026, 11, 25, 14, 30, tzinfo=timezone.utc
+    )
+    assert _next_cron_slot(datetime(2026, 11, 25, 14, 36, tzinfo=timezone.utc)) == datetime(
+        2026, 11, 25, 15, 0, tzinfo=timezone.utc
+    )
+    assert _next_cron_slot(datetime(2026, 11, 25, 14, 30, tzinfo=timezone.utc)) == datetime(
+        2026, 11, 25, 14, 30, tzinfo=timezone.utc
+    )
 
 
 def test_latest_does_not_label_a_saved_fallback_as_live(monkeypatch):

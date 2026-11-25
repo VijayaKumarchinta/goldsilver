@@ -86,13 +86,24 @@ def get_notification_status() -> dict:
             ),
             default=None,
         )
-        status["next_send_at"] = (
-            now if baseline is None or now >= baseline + interval else baseline + interval
-        )
+        if baseline is None or now >= baseline + interval:
+            status["next_send_at"] = _next_cron_slot(now)
+        else:
+            status["next_send_at"] = _next_cron_slot(baseline + interval)
         status["interval_minutes"] = 30
         return status
     finally:
         conn.close()
+
+def _next_cron_slot(moment: datetime) -> datetime:
+    """Next :00/:30 tick, matching the periodic_update cron in IST/UTC."""
+    moment = moment.replace(second=0, microsecond=0)
+    if moment.minute in (0, 30):
+        return moment
+    if moment.minute < 30:
+        return moment.replace(minute=30)
+    return (moment + timedelta(hours=1)).replace(minute=0)
+
 
 def has_scheduled_slot(scheduled_for: datetime) -> bool:
     conn = get_db()

@@ -228,6 +228,7 @@ def get_latest_snapshot() -> dict:
         fx = {"USD_INR": 0.0}
         fx_source = "db"
         snapshot_id = rows[0][0]
+        opens = _today_open_per_10g()
         captured_at = rows[0][1].isoformat() if rows[0][1] else None
 
         for row in rows:
@@ -243,7 +244,9 @@ def get_latest_snapshot() -> dict:
                 "inr_per_gram": float(inr_per_gram) if inr_per_gram is not None else None,
                 "inr_per_10g": float(per_10g) if per_10g is not None else None,
                 "usd_per_oz": float(usd_per_oz) if usd_per_oz is not None else None,
-                "open_per_10g": float(per_10g) if per_10g is not None else None,
+                "open_per_10g": opens.get(
+                    symbol, float(per_10g) if per_10g is not None else None
+                ),
                 "updated_at": updated_at,
                 "source": provider,
                 "live": False,
