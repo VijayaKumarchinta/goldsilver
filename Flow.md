@@ -185,65 +185,144 @@ The old 5-second REST polling of `/api/prices/latest` was removed at
    +-- init Flask-SocketIO
    +-- register /api/health, /api/prices, /api/logs
    +-- mount frontend/dist at /
-   +-- ensure_telegram_destination() (idempotent)
-   +-- register Socket.IO connect handler
-   +-- start_scheduler()
-   |     |
-   |     +-- BackgroundScheduler(timezone="UTC")
-   |     +-- add_job(periodic_update, CronTrigger */30 Asia/Kolkata)
-   |     +-- start()
-   |     +-- scheduled_periodic_update()  <- first delivery (one-time)
-   |
-   v
-3. Browser connects -> on_connect -> price_update broadcast (last known state)
-   |
-   v
-4. Live quote arrives (every <cache> seconds from TradingView)
-   +-- set_price_event -> socketio.emit("price_update", snapshot)
-   +-- browser watch(socket.latest) updates the UI
-   |
-   v
-5. Every 30 minutes: scheduled_periodic_update()
-   +-- ensure schema
-   +-- dispatch_pending
-   +-- send to Telegram groups
-   +-- log status to /api/logs
+
+## 10. Connection, sockets, data passing, and storage
+
+### 10.1 Frontend ↔ backend connection (WebSocket)
+
+`frontend/src/composables/useSocket.js` opens the Socket.IO connection.
+`frontend/src/App.vue` (and `useApi`) consumes it.
+
+Line references in `frontend/src/composables/useSocket.js`:
+
+| Lines | What |
+| --- | --- |
+| 9-12 | `apiBase` / `socketOrigin` — origin the client connects to |
+| 15-23 | `io(...)` — Socket.IO client; `transports: ['websocket', 'polling']`, `reconnection: true`, `reconnectionAttempts: 10` |
+| 29-36 | event handlers bound on `onMounted`: `connect`, `disconnect`, `price_update`, `connect_error` |
+
+Line references in `frontend/src/composables/useApi.js`:
+
+| Lines | What |
+| --- | --- |
+| 10 | `const socket = useSocket()` — creates the Socket.IO instance |
+| 17-27 | `watch(socket.connected, ...)` — reloads data once the socket is up |
+| 32-33 | `refreshChart(range)` → `loadChart()` — chart history over HTTP |
+| 36-56 | `loadAll()` — reads `socket.latest` (the live price broadcast), then `loadChart` / `loadLogs` / `loadPurity` |
+
+Key socket protocol:
+
+- The server broadcasts `socketio.emit("price_update", snapshot)`; the client receives it as the
+  `price_update` Socket.IO event, stored in `latest` (`useSocket.js:30`).
+- The chart is **not** part of the broadcast. It is fetched over plain HTTP:
+  `fetch('/api/prices/chart/<range>')` (`useApi.js:38`), because chart series come from PostgreSQL, not the live broadcast.
+
+### 10.2 Where the data is stored
+
+| Store | Used for |
+| --- | --- |
+| PostgreSQL `goldbot` schema | `price_snapshots` (each captured price set + `live` flag), `metal_prices` (per-metal rows for a snapshot), `fx_rates`, `notification_jobs` (30-minute delivery schedule + retry), `destinations` (enabled Telegram channels) |
+| `backend/app/config.py` (`Config.DATABASE_URL`) and `backend/app/extensions.py:get_db()` | Connection string + `SET search_path TO goldbot, public` (`extensions.py:6`) |
+| TradingView scanner (HTTP) | Live gold/silver/USD-INR/COMEX quotes fetched by `metals_tradingview.fetch_mcx()` (`providers/metals_tradingview.py`) |
+| Telegram API | Delivery target; `TelegramSender` POSTs to `https://api.telegram.org/bot<TOKEN>/sendMessage` (`messaging/telegram.py`) |
+
+Storage flow:
+
+1. `market_data.get_latest_snapshot()` — live path builds a snapshot from
+   `metals_tradingview.fetch_mcx()` results, marks `XAU`/`XAG` `live: true`,
+   calls `set_price_event()` (`market_data.py:132`), and *optionally* writes it to PostgreSQL
+   (`repositories/prices.save_snapshot`).
+2. The same snapshot object is what `set_price_event()` broadcasts, so clients and the scheduler
+   read exactly one source of truth.
+3. `scheduled_periodic_update()` (every 30 minutes, `manager.py:13-16`) calls
+   `ensure_hourly_notification_schema()`, then `create_jobs()` inserts one
+   `notification_jobs` row per enabled destination (`repositories/notifications.py`), then
+   `dispatch_pending()` sends it.
+4. `dispatch_pending()` SELECTs the pending/failed rows with `SKIP LOCKED` (`notification_dispatcher.py:203-207`),
+   loads the snapshot, formats `format_price_message()` (`message_formatter.py`),
+   and `sender.send()`es it through `TelegramSender` (`telegram.py:8`).
+
+### 10.3 How the data passes from backend → frontend (live price)
+
+```text
+market_data._live_quote()                       <- TradingView fetch_mcx
+        |
+        v
+market_data.set_price_event(snapshot)           <- stores _price_event (dict)
+        |
+        v
+socketio.emit("price_update", snapshot)         <- Flask-SocketIO broadcast to all clients
+        |
+        v
+useSocket.js:30 -> socket.on("price_update", handlePriceUpdate) -> latest.value = snapshot
+        |
+        v
+useApi.js:10 watch(socket.connected) + watch(socket.latest)
+        |
+        v
+App.vue updates the quote cards / market-open flag / feed status
 ```
 
----
+Notes:
+- The server does **not** wait for a client acknowledgment (`socketio.emit` is fire-and-forget;
+  `useSocket.js` owns reconnection/retry).
+- The client only *listens*; it never POSTs live prices back to the server.
 
-## 10. Responsibilities of each source file
+### 10.4 How the data passes from frontend → backend (HTTP, read-only queries)
 
-| File | Responsibility |
+| Client call | Endpoint | Purpose |
+| --- | --- | --- |
+| `loadChart()` (`useApi.js:38`) | `GET /api/prices/chart/<range>` | ECharts series from PostgreSQL `price_snapshots`/`metal_prices` |
+| `loadLogs()` (`useApi.js:64`) | `GET /api/logs` | `notification_jobs` statuses for the delivery panel |
+| `loadPurity()` (`useApi.js:70`) | `GET /api/prices/purity` | Purity / rates rows |
+| On `connect` (`useSocket.js:32`) | server `on_connect` → `price_update` broadcast | New browser lands on last known snapshot |
+
+### 10.5 Socket.IO server config
+
+`backend/app/__init__.py`:
+
+| Lines | Config |
 | --- | --- |
-| `backend/run.py` | Entry point; `create_app` + `socketio.run` |
-| `backend/app/__init__.py` | Flask factory, SocketIO, blueprints, connect handler |
-| `backend/app/config.py` | Environment-driven configuration |
-| `backend/app/extensions.py` | `get_db()` connection helper |
-| `backend/app/services/market_data.py` | Live quote fetch, broadcast, feed health |
-| `backend/app/services/market_data.py` | `_get_daily_open` (legacy proxy, not used by the delivery path) |
-| `backend/app/providers/metals_tradingview.py` | TradingView scanner HTTP client and parse |
-| `backend/app/services/notification_dispatcher.py` | `dispatch_pending`, `create_sender`, schema helpers |
-| `backend/app/services/message_formatter.py` | MarkdownV2 Telegram message text |
-| `backend/app/messaging/telegram.py` | `TelegramSender` HTTP send |
-| `backend/app/services/snapshot.py` | (empty marker) |
-| `backend/app/services/rates.py` | Purity and state rate rows |
-| `backend/app/services/validation.py` | (legacy validation, not on the delivery path) |
-| `backend/app/services/conversion.py` | (legacy, not on the delivery path) |
-| `backend/app/services/fx_service.py` | (legacy FX, not on the delivery path) |
-| `backend/app/services/local_rates.py` | (legacy local rates, not on the delivery path) |
-| `backend/app/repositories/prices.py` | `save_snapshot`, `get_latest` |
-| `backend/app/repositories/history.py` | `get_chart_history` (chart series) |
-| `backend/app/repositories/destinations.py` | `list_enabled`, `ensure_telegram_destination` |
-| `backend/app/repositories/notifications.py` | (empty marker) |
-| `backend/app/repositories/__init__.py` | Package marker |
-| `backend/app/scheduler/manager.py` | APScheduler setup and the single 30-minute job |
-| `backend/app/scheduler/jobs.py` | `scheduled_periodic_update`, `scheduled_capture`, `clear_all` |
-| `backend/app/api/prices.py` | `/latest`, `/chart/<range>`, `/delta/<metal>`, `/purity`, `/states`, `/schedule`, `/destinations`, `/health` |
-| `backend/app/api/health.py` | `/api/health` |
-| `backend/app/api/logs.py` | `/api/logs` delivery status |
-| `backend/app/api/destinations.py` | (empty marker) |
-| `backend/app/api/schedule.py` | (empty marker) |
-| `backend/app/templates/` | (not used) |
-| `frontend/src/` | Vue 3 + Socket.IO + ECharts SPA |
-| `frontend/dist/` | Built SPA, served by the backend |
+| 8,14-16 | `socketio = SocketIO()` (module-level instance) |
+| 19-21 | `socketio.init_app(app, cors_allowed_origins="*", ping_timeout=10, ping_interval=15)` |
+| 23-25 | blueprints registered at `/api/health`, `/api/prices`, `/api/logs` |
+| 43-45 | serves `frontend/dist` at `/`, and aborts (404) for `/api/*` and `/socket.io/*` |
+
+`backend/app/scheduler/manager.py`:
+
+| Lines | Config |
+| --- | --- |
+| 12-14 | `BackgroundScheduler(timezone="UTC")` |
+| 19-22 | one job: `id="periodic_update"`, `CronTrigger(minute="*/30", second=0, timezone="Asia/Kolkata")` |
+| 24-26 | `start()`; logs `Registered job: periodic_update -> cron[minute='*/30', second='0']` |
+
+### 10.6 Startup order (what runs, in what sequence)
+
+```text
+1. python run.py
+   |
+   v
+2. create_app(start_sched=True)
+   +-- Config (env)
+   +-- Flask-SocketIO init (cors=*)
+   +-- /api/health, /api/prices, /api/logs blueprints
+   +-- frontend/dist mounted at /
+   +-- ensure_telegram_destination() (idempotent)
+   +-- @socketio.on("connect") -> sends current snapshot to new client
+   +-- start_scheduler()
+   |     +-- BackgroundScheduler
+   |     +-- one CronTrigger */30 Asia/Kolkata
+   |     +-- start()
+   |     +-- scheduled_periodic_update()  <- one-time first delivery at startup
+   |
+   v
+3. Browser connects -> on_connect -> price_update (last state)
+   |
+   v
+4. Live quote arrives -> set_price_event -> price_update broadcast
+   +-- browser watch(socket.latest) re-renders the dashboard
+   |
+   v
+5. Every 30 minutes -> scheduled_periodic_update -> dispatch_pending -> Telegram
+   +-- /api/logs shows sent/failed + retry status
+```
