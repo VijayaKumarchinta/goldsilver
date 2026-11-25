@@ -1,5 +1,55 @@
-import { ref, onMounted, onUnmounted, shallowRef, watch } from 'vue'
+import { ref, onMounted, shallowRef, watch } from 'vue'
 import { useSocket } from './useSocket'
+
+const apiBase = (import.meta.env.VITE_API_BASE || '/api').replace(/\/+$/, '')
+
+function toNumber(value) {
+  if (value === null || value === undefined || value === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+// The REST endpoint reports `gold`/`silver` with a per-10g close, while the
+// socket broadcast reports `metals.XAU`/`metals.XAG` with a per-gram rate.
+// Normalise both into the single quote shape the dashboard renders.
+function normalizeQuote(quote) {
+  if (!quote) return null
+  const perGram = toNumber(quote.inr_per_gram)
+  const close = toNumber(quote.close)
+    ?? toNumber(quote.inr_per_10g)
+    ?? (perGram === null ? null : perGram * 10)
+  return {
+    ...quote,
+    inr_per_gram: perGram,
+    close,
+    open: toNumber(quote.open) ?? toNumber(quote.open_per_10g),
+    live: Boolean(quote.live),
+  }
+}
+
+function normalizeSnapshot(data) {
+  if (!data || typeof data !== 'object') return null
+  const metals = data.metals && typeof data.metals === 'object'
+    ? data.metals
+    : { XAU: data.gold, XAG: data.silver }
+  return {
+    ...data,
+    metals: {
+      XAU: normalizeQuote(metals.XAU),
+      XAG: normalizeQuote(metals.XAG),
+    },
+    fx: data.fx || {},
+    feed: data.feed || null,
+  }
+}
+
+async function getJson(path, label) {
+  const response = await fetch(apiBase + path)
+  if (!response.ok) {
+    throw new Error(`${label} failed (${response.status})`)
+  }
+  return response.json()
+}
 
 export function useApi() {
   const prices = shallowRef(null)
@@ -10,85 +60,30 @@ export function useApi() {
   const error = ref(null)
   const marketOpen = ref(false)
   const chartRange = ref('1D')
-  const socket = useSocket()
+  const { latest, connected } = useSocket()
 
-  // Keep the live price stream alive and push live deltas back to the
-  // server so the dashboard behaves as a two-way live stream.
+  // Live updates win over the initial REST snapshot. When a broadcast omits
+  // the feed health block, keep the one we already have.
   watch(
-    () => socket.connected,
-    (connected) => {
-      if (connected && prices.value && !loading.value) {
-        loadAll()
-      }
+    latest,
+    (snapshot) => {
+      if (!snapshot) return
+      const normalized = normalizeSnapshot(snapshot)
+      if (!normalized) return
+      prices.value = { ...normalized, feed: normalized.feed ?? prices.value?.feed ?? null }
+      marketOpen.value = Boolean(normalized.market_open)
+      error.value = null
     },
+    { immediate: true },
   )
 
-  async function sendPriceDelta(client, snapshot) {
-    const delta = {
-      captured_at: snapshot.captured_at,
-      market_open: snapshot.market_open,
-      metals: {
-        XAU: snapshot.metals.XAU,
-        XAG: snapshot.metals.XAG,
-      },
-      fx: snapshot.fx,
-      source: 'dashboard',
-      client_id: client?.id || null,
-    }
-    return socket.sendPriceUpdate(delta)
-  }
-
-  // If the server acked a push, log it locally and keep the price stream
-  // healthy by refreshing the chart on the next live quote.
-  watch(
-    () => socket.acked,
-    (acked) => {
-      if (acked && prices.value) {
-        // no-op: the server ack is handled by the dashboard; the next
-        // live price_update keeps the stream flowing.
-      }
-    },
-  )
-
-  function refreshChart(range) {
-    chartRange.value = range
-    loadChart()
-  }
-
-  async function loadAll() {
-    loading.value = true
-    error.value = null
-    try {
-      const [latest, history, logs, purityData] = await Promise.all([
-        socket.latest ? Promise.resolve(socket.latest) : Promise.reject(new Error('No live snapshot')),
-        loadChart(),
-        loadLogs(),
-        loadPurity(),
-      ])
-      prices.value = latest
-      marketOpen.value = latest?.market_open
-      chart.value = history
-      logsData.value = logs
-      purity.value = purityData
-    } catch (e) {
-      const message = e?.message ?? 'Price feed unavailable'
-      if (!socket.connected) {
-        error.value = `Socket disconnected — ${message}`
-      } else {
-        error.value = message
-      }
-    } finally {
-      loading.value = false
-    }
-  }
+  watch(connected, (isConnected) => {
+    if (isConnected) loadAll()
+  })
 
   async function loadChart() {
     try {
-      const response = await fetch('/api/prices/chart/' + chartRange.value)
-      if (!response.ok) {
-        throw new Error('Chart refresh failed')
-      }
-      return response.json()
+      return await getJson(`/prices/chart/${chartRange.value}`, 'Chart refresh')
     } catch (e) {
       error.value = e?.message ?? 'Chart refresh failed'
       throw e
@@ -97,11 +92,7 @@ export function useApi() {
 
   async function loadLogs() {
     try {
-      const response = await fetch('/api/logs')
-      if (!response.ok) {
-        throw new Error('Failed to load logs')
-      }
-      return response.json()
+      return await getJson('/logs', 'Delivery log load')
     } catch (e) {
       error.value = e?.message ?? 'Failed to load logs'
       throw e
@@ -110,30 +101,50 @@ export function useApi() {
 
   async function loadPurity() {
     try {
-      const response = await fetch('/api/prices/purity')
-      if (!response.ok) {
-        throw new Error('Failed to load purity')
-      }
-      return response.json()
+      return await getJson('/prices/purity', 'Purity load')
     } catch (e) {
       error.value = e?.message ?? 'Failed to load purity'
       throw e
     }
   }
 
-  function reconnect() {
-    if (socket.connected) {
-      loadAll()
+  async function loadAll() {
+    loading.value = true
+    error.value = null
+    const [latestResult, chartResult, logsResult, purityResult] = await Promise.allSettled([
+      getJson('/prices/latest', 'Price feed'),
+      loadChart(),
+      loadLogs(),
+      loadPurity(),
+    ])
+
+    // Do not overwrite a newer socket snapshot with the REST response.
+    if (latestResult.status === 'fulfilled' && !latest.value) {
+      const snapshot = normalizeSnapshot(latestResult.value)
+      if (snapshot) {
+        prices.value = snapshot
+        marketOpen.value = Boolean(snapshot.market_open)
+      }
     }
+    if (chartResult.status === 'fulfilled') chart.value = chartResult.value
+    if (logsResult.status === 'fulfilled') logsData.value = logsResult.value
+    if (purityResult.status === 'fulfilled') purity.value = purityResult.value
+
+    const failure = [latestResult, chartResult, logsResult, purityResult]
+      .find((result) => result.status === 'rejected')
+    if (failure) {
+      const message = failure.reason?.message || 'Some dashboard data could not be loaded'
+      error.value = connected.value ? message : `Socket disconnected - ${message}`
+    }
+    loading.value = false
   }
 
-  onMounted(() => {
-    socket.on('connect', reconnect)
-  })
+  function refreshChart(range) {
+    chartRange.value = range
+    return loadChart()
+  }
 
-  onUnmounted(() => {
-    socket.off('connect', reconnect)
-  })
+  onMounted(loadAll)
 
   return {
     prices,
@@ -144,11 +155,8 @@ export function useApi() {
     loading,
     error,
     chartRange,
-    socket,
-    connected: socket.connected,
+    connected,
     loadAll,
     refreshChart,
-    reconnect,
-    sendPriceDelta,
   }
 }

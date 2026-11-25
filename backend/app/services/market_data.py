@@ -53,6 +53,7 @@ def set_price_event(snapshot: dict | None):
     with _broadcast_lock:
         _price_event["last"] = snapshot
         _price_event["last_at"] = datetime.now(timezone.utc)
+        global _last_live_at
         _last_live_at = _price_event["last_at"]
 
     try:
@@ -61,104 +62,10 @@ def set_price_event(snapshot: dict | None):
         _sio.emit(
             "price_update",
             _json_safe(snapshot) if snapshot is not None else None,
-            callback=on_price_update_ack,
             namespace="/",
         )
     except Exception:
         log.exception("price event broadcast failed")
-
-
-def on_price_update_ack(client_id, *args):
-    """Called by the Socket.IO server when the client acks `price_update`.
-
-    ``client_id`` is the socket ID that acknowledged the message.  The
-    payload (snapshot) is intentionally ignored here: the server's job is
-    only to prove delivery.  The client owns reconnection/retry and later
-    pushes live price deltas back with the same protocol.
-    """
-    log.debug("price_update ack from socket=%s payload=%r", client_id, args)
-    # Register the Socket.IO event that the dashboard uses to push live price
-    # deltas back up to the server (the dashboard is read-write, not just a
-    # one-way consumer).
-    from app.services.market_data import _register_live_price_events
-    _register_live_price_events(_socketio)
-    try:
-        _nd = _get_notification_dispatcher()
-        _nd.record_live_price_update(socket_id, payload)
-        log.debug(
-            "received live price update from socket=%s",
-            socket_id,
-        )
-    except Exception:
-        log.exception(
-            "failed to record live price update from socket=%s",
-            socket_id,
-        )
-
-def _get_notification_dispatcher():
-    """Called by the Socket.IO server when the client acks `price_update`.
-
-    ``client_id`` is the socket ID that acknowledged the message.  The
-    payload (snapshot) is intentionally ignored here: the server's job is
-    only to prove delivery.  The client owns reconnection/retry and later
-    pushes live price deltas back with the same protocol.
-    """
-    log.debug("price_update ack from socket=%s payload=%r", client_id, args)
-    # Register the Socket.IO event that the dashboard uses to push live price
-    # deltas back up to the server (the dashboard is read-write, not just a
-    # one-way consumer).
-    _register_live_price_events(_socketio)
-    try:
-        _nd = _get_notification_dispatcher()
-        _nd.record_live_price_update(socket_id, payload)
-        log.debug(
-            "received live price update from socket=%s",
-            socket_id,
-        )
-    except Exception:
-        log.exception(
-            "failed to record live price update from socket=%s",
-            socket_id,
-        )
-
-
-def on_price_update_from_client(socket_id, payload):
-    try:
-        _nd = _get_notification_dispatcher()
-        _nd.record_live_price_update(socket_id, payload)
-        log.debug(
-            "received live price update from socket=%s",
-            socket_id,
-        )
-    except Exception:
-        log.exception(
-            "failed to record live price update from socket=%s",
-            socket_id,
-        )
-
-
-def _register_live_price_events(socketio):
-    try:
-        _nd = _get_notification_dispatcher()
-        _nd.record_live_price_update(socket_id, payload)
-        log.debug(
-            "received live price update from socket=%s",
-            socket_id,
-        )
-    except Exception:
-        log.exception(
-            "failed to record live price update from socket=%s",
-            socket_id,
-        )
-
-
-def _register_live_price_events(socketio):
-    """Register the Socket.IO events used by the bidirectional live stream.
-
-    Bound at app startup (when ``socketio`` exists) so the handler decorates
-    the same Socket.IO instance the broadcast uses.
-    """
-    socketio.on("live_price_update", on_price_update_from_client)
 
 
 def source_family(source) -> str:
@@ -280,6 +187,7 @@ def get_latest_snapshot() -> dict:
         metals = {"XAU": {}, "XAG": {}}
         fx = {"USD_INR": 0.0}
         fx_source = "db"
+        snapshot_id = rows[0][0]
         captured_at = rows[0][1].isoformat() if rows[0][1] else None
 
         for row in rows:

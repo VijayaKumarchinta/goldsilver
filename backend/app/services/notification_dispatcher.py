@@ -142,33 +142,6 @@ def create_jobs(
     finally:
         conn.close()
 
-def record_live_price_update(socket_id: str, payload: dict) -> None:
-    """Persist a live price delta pushed up by the dashboard.
-
-    The client owns reconnection/retry; this function simply appends the
-    incoming quote to the delivery log so the dashboard can credit acked
-    pushes and flag injected or stale values.
-    """
-    conn = get_db()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            INSERT INTO notification_jobs
-                (snapshot_id, destination_id, event_type, status,
-                 attempts, last_error, created_at, updated_at)
-            VALUES (NULL, NULL, 'price_update', 'sent',
-                    0, NULL, NOW(), NOW())
-            """
-        )
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        log.exception("record_live_price_update failed")
-    finally:
-        conn.close()
-
-
 def _load_snapshot(cur, snapshot_id: int) -> dict:
     cur.execute(
         """

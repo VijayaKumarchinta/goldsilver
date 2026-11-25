@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 
 from app.config import Config
@@ -37,6 +38,18 @@ def clear_all():
 
 def _all_live(snap: dict) -> bool:
     return all(snap.get("metals", {}).get(s, {}).get("live") for s in ("XAU", "XAG"))
+
+
+def _wait_for_live_prices(event_type: str, attempts: int = 3, delay_seconds: float = 2.0):
+    """Retry the live quote briefly before a scheduled send is skipped."""
+    for attempt in range(attempts):
+        snapshot = get_latest_snapshot()
+        if _all_live(snapshot):
+            return snapshot
+        if attempt < attempts - 1:
+            time.sleep(delay_seconds)
+    log.warning("%s: live MCX prices still unavailable after %s attempts", event_type, attempts)
+    return None
 
 
 def scheduled_capture(event_type: str):

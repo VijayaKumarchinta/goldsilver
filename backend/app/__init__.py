@@ -7,10 +7,9 @@ from app.config import Config
 from app.api.prices import prices_bp
 from app.api.health import health_bp
 from app.api.logs import logs_bp
-from app.api.prices import prices_bp
 from app.repositories.destinations import ensure_telegram_destination
 from app.scheduler.manager import start_scheduler
-from app.services.market_data import _json_safe, get_latest_snapshot, _register_live_price_events
+from app.services.market_data import _json_safe, get_latest_snapshot
 
 logging.basicConfig(
     level=logging.INFO,
@@ -84,14 +83,13 @@ def create_app(start_sched: bool = True):
             logging.exception("Failed to send initial price on connect")
 
     @socketio.on("connect")
-    def on_connect(socket_id, auth=None):
-        """Flask-SocketIO calls the connect handler with (socket_id, auth); accept both."""
+    def on_connect(auth=None):
+        """Flask-SocketIO calls the connect handler with the client auth payload."""
         try:
             snap = get_latest_snapshot()
             _initial_price(snap)
         except Exception:
             logging.exception("Failed to send initial price on connect")
-    _register_live_price_events(socketio)
 
     if start_sched:
         start_scheduler()

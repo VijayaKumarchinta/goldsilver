@@ -1,7 +1,12 @@
 from decimal import Decimal, ROUND_HALF_UP
 from flask import Blueprint, jsonify
 from app.repositories.history import get_chart_history
-from app.services.market_data import (_market_open_now, get_latest_snapshot, get_open_close_delta)
+from app.services.market_data import (
+    _market_open_now,
+    feed_health,
+    get_latest_snapshot,
+    get_open_close_delta,
+)
 from app.services.rates import purity_rows, state_rows
 
 prices_bp = Blueprint("prices", __name__)

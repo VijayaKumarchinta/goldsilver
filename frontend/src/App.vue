@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import HeaderBar from './components/HeaderBar.vue'
 import NotificationLogs from './components/NotificationLogs.vue'
 import PriceChart from './components/PriceChart.vue'
@@ -7,22 +7,8 @@ import PurityTable from './components/PurityTable.vue'
 import { useApi } from './composables/useApi'
 import { money } from './utils/format.js'
 
-const { prices, chart, logsData, purity, marketOpen, loading, error, refreshChart, socket } = useApi()
+const { prices, chart, logsData, purity, marketOpen, loading, error, refreshChart } = useApi()
 const chartRange = ref('1D')
-let stopAutoRefresh = null
-
-// The backend pushes the latest live quote over Socket.IO. Initialize the
-// reactive price stream from the first socket event.
-watch(
-  () => socket.latest,
-  (snapshot) => {
-    if (snapshot && (prices.value === null || snapshot.captured_at !== prices.value.captured_at)) {
-      prices.value = snapshot
-      marketOpen.value = snapshot.market_open
-    }
-  },
-  { immediate: true },
-)
 
 function parseDate(value) {
   if (!value) return null
@@ -161,11 +147,6 @@ function onRangeChange(range) {
   refreshChart(range)
 }
 
-onMounted(() => {
-  stopAutoRefresh = startAutoRefresh()
-})
-
-onUnmounted(() => stopAutoRefresh?.())
 </script>
 
 <template>
