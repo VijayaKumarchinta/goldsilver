@@ -93,6 +93,21 @@ def on_price_update_ack(client_id, *args):
         )
 
 
+def on_price_update_from_client(socket_id, payload):
+    try:
+        _nd = _get_notification_dispatcher()
+        _nd.record_live_price_update(socket_id, payload)
+        log.debug(
+            "received live price update from socket=%s",
+            socket_id,
+        )
+    except Exception:
+        log.exception(
+            "failed to record live price update from socket=%s",
+            socket_id,
+        )
+
+
 def _register_live_price_events(socketio):
     """Register the Socket.IO events used by the bidirectional live stream.
 
