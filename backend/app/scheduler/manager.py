@@ -1,5 +1,8 @@
 import logging
+
 from app.scheduler.jobs import scheduled_periodic_update
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 log = logging.getLogger(__name__)
 _scheduler = None
@@ -38,14 +41,8 @@ def start_scheduler():
     _scheduler.start()
 
     # Rebuild the chart from the startup reading, then post a 30-minute
-    # Telegram update once the feed is healthy. Neither emits a price event:
+    # Telegram update once the feed has settled. Neither emits a price event:
     # the live quote is broadcast by get_latest_snapshot instead.
-    try:
-        result = scheduled_capture("startup")
-        log.info("Startup capture: %s", result)
-    except Exception:
-        log.exception("Startup capture failed")
-
     try:
         result = scheduled_periodic_update()
         log.info("Startup Telegram update: %s", result)
@@ -60,3 +57,4 @@ def shutdown_scheduler():
     if _scheduler:
         _scheduler.shutdown(wait=False)
         _scheduler = None
+
