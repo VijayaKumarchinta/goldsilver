@@ -12,6 +12,7 @@ from flask import Flask
 from app.api.health import health_bp
 from app.repositories.history import MAX_POINTS, _downsample
 from app.scheduler import manager
+from app.services import notification_dispatcher as dispatcher
 from app.services.rates import KARAT_FACTORS, STATE_DATA, purity_rows, state_rows
 
 
@@ -44,6 +45,59 @@ def test_state_rows_cover_every_configured_state():
     assert len(rows) == len(STATE_DATA)
     assert {row["state"] for row in rows} == {state for state, _ in STATE_DATA}
     assert all(row["diff_pct"] == "0.00" for row in rows)
+
+
+def test_dispatch_sends_to_chat_identifier_not_local_row_id(monkeypatch):
+    chat_id = "-1001234565769"
+
+    class FakeCursor:
+        def execute(self, *args, **kwargs):
+            pass
+
+        def fetchall(self):
+            return [{
+                "id": 39,
+                "event_type": "periodic_update",
+                "attempts": 0,
+                "snapshot_id": 7,
+                "destination_id": 1,
+                "channel": "telegram",
+                "identifier": chat_id,
+            }]
+
+        def fetchone(self):
+            return None
+
+    class FakeConn:
+        autocommit = False
+
+        def cursor(self, *args, **kwargs):
+            return FakeCursor()
+
+        def commit(self):
+            pass
+
+        def close(self):
+            pass
+
+    class FakeSender:
+        def __init__(self):
+            self.sent_to = []
+
+        def send(self, identifier, text):
+            self.sent_to.append(identifier)
+            return {"ok": True, "detail": "sent"}
+
+    monkeypatch.setattr(dispatcher, "get_db", lambda: FakeConn())
+    monkeypatch.setattr(dispatcher, "ensure_hourly_notification_schema", lambda: None)
+    monkeypatch.setattr(dispatcher, "_load_snapshot", lambda cur, snapshot_id: {})
+    monkeypatch.setattr(dispatcher, "format_price_message", lambda snap, event: "x")
+
+    sender = FakeSender()
+    result = dispatcher.dispatch_pending(sender=sender)
+
+    assert result["sent"] == 1
+    assert sender.sent_to == [chat_id]
 
 
 def test_scheduler_health_reports_the_running_scheduler():

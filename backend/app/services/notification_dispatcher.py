@@ -220,7 +220,9 @@ def dispatch_pending(sender: TelegramSender | None = None, limit: int = 20) -> d
             )
             snap = _load_snapshot(cur, job["snapshot_id"])
             text = format_price_message(snap, job["event_type"])
-            outcome = sender.send(job["destination_id"], text)
+            # destination_id is the local destinations row id; Telegram needs
+            # the chat identifier stored alongside it.
+            outcome = sender.send(job["identifier"], text)
             new_attempts = job["attempts"] + 1
 
             if outcome.get("ok"):
