@@ -199,6 +199,7 @@ def dispatch_pending(sender: TelegramSender | None = None, limit: int = 20) -> d
             FROM notification_jobs j
             JOIN destinations d ON d.id = j.destination_id
             WHERE j.status IN ('pending', 'sending', 'failed')
+              AND d.enabled = TRUE
               AND j.attempts < %s
               AND j.next_attempt_at <= NOW()
             ORDER BY j.id

@@ -33,6 +33,14 @@ def ensure_telegram_destination() -> int | None:
             (Config.TELEGRAM_CHAT_ID,),
         )
         destination_id = cur.fetchone()[0]
+        # Keep only the chat configured right now. Otherwise an old
+        # TELEGRAM_CHAT_ID stays enabled and every delivery to it fails with
+        # "chat not found". Deleting it also cascades its stale jobs.
+        cur.execute(
+            "DELETE FROM destinations "
+            "WHERE channel = 'telegram' AND identifier <> %s",
+            (Config.TELEGRAM_CHAT_ID,),
+        )
         conn.commit()
         return destination_id
     finally:
