@@ -56,7 +56,8 @@ def set_price_event(snapshot: dict | None):
         _last_live_at = _price_event["last_at"]
 
     try:
-        _sio = _get_socketio()
+        from app import socketio as _socketio
+        _sio = _socketio
         _sio.emit(
             "price_update",
             _json_safe(snapshot) if snapshot is not None else None,
@@ -65,6 +66,7 @@ def set_price_event(snapshot: dict | None):
         )
     except Exception:
         log.exception("price event broadcast failed")
+
 
 def on_price_update_ack(client_id, *args):
     """Called by the Socket.IO server when the client acks `price_update`.
@@ -78,7 +80,34 @@ def on_price_update_ack(client_id, *args):
     # Register the Socket.IO event that the dashboard uses to push live price
     # deltas back up to the server (the dashboard is read-write, not just a
     # one-way consumer).
-    _register_live_price_events(_get_socketio())
+    from app.services.market_data import _register_live_price_events
+    _register_live_price_events(_socketio)
+    try:
+        _nd = _get_notification_dispatcher()
+        _nd.record_live_price_update(socket_id, payload)
+        log.debug(
+            "received live price update from socket=%s",
+            socket_id,
+        )
+    except Exception:
+        log.exception(
+            "failed to record live price update from socket=%s",
+            socket_id,
+        )
+
+def _get_notification_dispatcher():
+    """Called by the Socket.IO server when the client acks `price_update`.
+
+    ``client_id`` is the socket ID that acknowledged the message.  The
+    payload (snapshot) is intentionally ignored here: the server's job is
+    only to prove delivery.  The client owns reconnection/retry and later
+    pushes live price deltas back with the same protocol.
+    """
+    log.debug("price_update ack from socket=%s payload=%r", client_id, args)
+    # Register the Socket.IO event that the dashboard uses to push live price
+    # deltas back up to the server (the dashboard is read-write, not just a
+    # one-way consumer).
+    _register_live_price_events(_socketio)
     try:
         _nd = _get_notification_dispatcher()
         _nd.record_live_price_update(socket_id, payload)
@@ -94,6 +123,21 @@ def on_price_update_ack(client_id, *args):
 
 
 def on_price_update_from_client(socket_id, payload):
+    try:
+        _nd = _get_notification_dispatcher()
+        _nd.record_live_price_update(socket_id, payload)
+        log.debug(
+            "received live price update from socket=%s",
+            socket_id,
+        )
+    except Exception:
+        log.exception(
+            "failed to record live price update from socket=%s",
+            socket_id,
+        )
+
+
+def _register_live_price_events(socketio):
     try:
         _nd = _get_notification_dispatcher()
         _nd.record_live_price_update(socket_id, payload)
