@@ -13,6 +13,7 @@ from app.services.notification_dispatcher import (
     get_notification_status,
     has_scheduled_slot,
 )
+from app.extensions import get_db
 
 log = logging.getLogger(__name__)
 
@@ -20,12 +21,23 @@ log = logging.getLogger(__name__)
 NOTIFY_EVENTS = {"market_open", "market_close", "weekly_close"}
 
 
+def clear_all():
+    conn = get_db()
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            cur.execute(
+                "TRUNCATE goldbot.price_snapshots, goldbot.metal_prices, goldbot.fx_rates CASCADE"
+            )
+        conn.commit()
+        log.info("History cleared for market_close/startup cycle")
+    finally:
+        conn.close()
+
 def _all_live(snap: dict) -> bool:
     return all(snap.get("metals", {}).get(s, {}).get("live") for s in ("XAU", "XAG"))
 
-
 def _wait_for_live_prices(event_type: str):
-    """Scheduled posts retry for about 3 minutes, then are skipped. An estimate is never sent."""
     for attempt in range(3):
         time.sleep(60)
         snap = get_latest_snapshot()
@@ -33,7 +45,6 @@ def _wait_for_live_prices(event_type: str):
             return snap
         log.warning("%s: live MCX prices still unavailable (retry %s/3)", event_type, attempt + 1)
     return None
-
 
 def scheduled_capture(event_type: str):
     if event_type == "hourly_update":
@@ -58,7 +69,6 @@ def scheduled_capture(event_type: str):
     except Exception as e:
         log.exception("Scheduled job failed for %s: %s", event_type, e)
         raise
-
 
 def scheduled_periodic_update():
     log.info("Checking whether the 30-minute Telegram update is due")
@@ -99,9 +109,6 @@ def scheduled_periodic_update():
         ):
             log.warning("Telegram update skipped: live MCX market data is unavailable")
             return {"due": False, "reason": "live_market_data_unavailable"}
-
-        # Always record a fresh periodic_update snapshot so the chart and the
-        # notification history stay on the same 30-minute cadence.
         snapshot_id = save_snapshot(snapshot, event_type="periodic_update")
         created = create_jobs(snapshot_id, "periodic_update", scheduled_for=scheduled_for)
         if not created:
