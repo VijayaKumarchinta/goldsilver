@@ -1,11 +1,18 @@
 # Backend
 
-Backend code for the Bullion Desk India dashboard.
+Backend code for the GoldSilver Bot dashboard.
 
-If there are operational notes to keep, put them in the top-level README or
-in a shared docs folder next to the code they describe. Otherwise, keep this
-file minimal and do not duplicate stale notes here.
+This directory is the Flask + Flask-SocketIO process. It serves the built
+frontend SPA at `/`, exposes the `/api/prices`, `/api/health`, and
+`/api/logs` endpoints, and runs one APScheduler job: the 30-minute Telegram
+delivery tick.
 
-Local developer notes were previously referenced from `../../flow.md`.
-If that file still exists without real content, delete it rather than leaving
-empty docs around.
+## Run locally
+
+```bash
+cd backend
+python run.py
+```
+
+The app listens on `http://0.0.0.0:5000`. Request the dashboard at `/`, or
+`/api/prices/latest`, `/api/prices/chart/7D`, `/api/logs`, `/api/health` etc.
