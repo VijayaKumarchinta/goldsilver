@@ -87,6 +87,14 @@ _TELEGRAM_MD_V2_ESCAPE = {
     for ch in r"_*[]()~`>#+-=|{}.!"
 }
 
+# Telegram MarkdownV2 treats the rupee sign and em dash as special characters
+# that must be escaped even though they are not ASCII. The bot formats rates
+# with these symbols, so they are added here to avoid the "can't parse entities"
+# / "Character '-' is reserved" errors.
+for _ch in "₹—‘’“”–—…·":
+    if _ch not in _TELEGRAM_MD_V2_ESCAPE:
+        _TELEGRAM_MD_V2_ESCAPE[_ch] = "\\" + _ch
+
 
 def _escape_markdown_v2(text: str) -> str:
     # Telegram's MarkdownV2 requires many ASCII punctuation characters to be escaped
