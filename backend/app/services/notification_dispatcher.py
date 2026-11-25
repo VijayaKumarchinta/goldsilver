@@ -4,6 +4,7 @@ from app.extensions import get_db
 from app.messaging.telegram import TelegramSender
 from app.repositories.destinations import list_enabled
 from app.services.message_formatter import format_price_message
+from psycopg2.extras import RealDictCursor
 
 MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = [30, 120, 480]
