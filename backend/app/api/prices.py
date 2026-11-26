@@ -27,34 +27,47 @@ def latest():
     # value and keep ``inr_per_gram`` for the per-gram detail. ``Decimal``
     # (straight out of PostgreSQL and the live provider) is not JSON-safe in
     # older Flask, so coerce to float here — the frontend expects a number.
+    # ``open_per_10g`` is a stored rate, so it is emitted as a number too.
     def _to_number(value):
         try:
             return float(Decimal(str(value)))
         except Exception:
             return value
 
+    def _round2(value):
+        """Round a rate to two decimals so the API boundary is not noisy."""
+        try:
+            return round(float(Decimal(str(value))), 2)
+        except Exception:
+            return value
+
+    def _per_10g(quote):
+        if quote.get("inr_per_gram") is None:
+            return None
+        return _round2(_to_number(quote["inr_per_gram"]) * 10)
+
     return jsonify({
         "gold": {
-            "open": gold.get("open_per_10g"),
-            "close": _to_number(gold["inr_per_gram"]) * 10 if gold.get("inr_per_gram") is not None else None,
+            "open": _to_number(gold.get("open_per_10g")),
+            "close": _per_10g(gold),
             "usd_per_oz": _to_number(gold["usd_per_oz"]),
             "inr_per_gram": _to_number(gold["inr_per_gram"]),
             "updated_at": gold["updated_at"],
             "source": gold["source"],
             "live": gold.get("live", False),
             "estimated": gold.get("estimated", False),
-            "spot_inr_per_10g": _to_number(gold.get("spot_inr_per_10g")),
+            "spot_inr_per_10g": _round2(gold.get("spot_inr_per_10g")),
         },
         "silver": {
-            "open": silver.get("open_per_10g"),
-            "close": _to_number(silver["inr_per_gram"]) * 10 if silver.get("inr_per_gram") is not None else None,
+            "open": _to_number(silver.get("open_per_10g")),
+            "close": _per_10g(silver),
             "usd_per_oz": _to_number(silver["usd_per_oz"]),
             "inr_per_gram": _to_number(silver["inr_per_gram"]),
             "live": silver.get("live", False),
             "updated_at": silver["updated_at"],
             "source": silver["source"],
             "estimated": silver.get("estimated", False),
-            "spot_inr_per_10g": _to_number(silver.get("spot_inr_per_10g")),
+            "spot_inr_per_10g": _round2(silver.get("spot_inr_per_10g")),
         },
         "fx": {"USD_INR": _to_number(usd_inr)},
         "market_open": snap["market_open"],
