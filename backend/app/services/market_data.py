@@ -7,8 +7,11 @@ from zoneinfo import ZoneInfo
 from app.config import Config
 from app.extensions import get_db
 from app.messaging.base import Sender
+from app.providers import fetch_mcx as fetch_mcx_provider
 from app.providers import metals_tradingview
+
 log = logging.getLogger(__name__)
+
 _BOOT_AT = datetime.now(timezone.utc)
 _last_live_at: datetime | None = None
 
@@ -26,7 +29,7 @@ def _json_safe(obj):
     """Recursively convert Decimal (and other non-JSON types) to a JSON-safe Python type.
 
     The snapshot is an arbitrarily nested dict/list emitted straight to every
-    Socket.IO client.  The decimal fields come out of PostgreSQL raw, so each
+    Socket.IO client. The decimal fields come out of PostgreSQL raw, so each
     leaf is coerced to float; mappings and sequences are walked instead of
     rejected.
     """
@@ -46,9 +49,9 @@ def _json_safe(obj):
 def set_price_event(snapshot: dict | None):
     """Record the newest live market snapshot and notify every Socket.IO client.
 
-    The snapshot is serialised to JSON first so ``Decimal`` values (which come
-    straight out of PostgreSQL) are converted to ``float`` and can be sent
-    over the Socket.IO payload.
+    The snapshot is serialised to JSON first so Decimal values (which come
+    straight out of PostgreSQL) are converted to float and can be sent over
+    the Socket.IO payload.
     """
     with _broadcast_lock:
         _price_event["last"] = snapshot
@@ -69,21 +72,41 @@ def set_price_event(snapshot: dict | None):
 
 
 def source_family(source) -> str:
-    """Spot and estimate histories from earlier versions are kept apart from MCX rows."""
+    """Classify a price source into *mcx*, *estimate* or *spot* for chart filtering.
+
+    ``source`` is the ``source`` field stamped onto a metal entry. Live quotes
+    from the TradingView scanner carry a friendly name such as
+    ``"TradingView - MCX GOLD front-month futures"`` and must sort into *mcx*;
+    rows stored by the database carry ``"db"`` (the DB fallback) and are also
+    *mcx* so the chart is not filtered to an empty set. Anything carrying an
+    ``(estimate)`` tag stays *estimate*; everything else is *spot*.
+    """
     s = (source or "").lower()
-    if s.startswith("mcx"):
+    if "mcx" in s or s in {"db", "database"}:
         return "mcx"
-    return "estimate" if "estimate" in s else "spot"
+    if "estimate" in s:
+        return "estimate"
+    return "spot"
+
 
 _FAMILY_SQL = {
-    "mcx": "m.provider LIKE 'MCX%%'",
+    # The provider field is free text: the live TradingView row is stamped with
+    # a friendly name such as "TradingView - MCX GOLD front-month futures", and
+    # the DB fallback is stamped "db". Match both, plus the legacy "MCX..."
+    # prefix, and keep estimate rows separate so a spot-history never leaks
+    # into an MCX trace.
+    "mcx": "m.provider ILIKE 'MCX%%' OR m.provider ILIKE '%%MCX GOLD%%' OR m.provider ILIKE '%%MCX SILVER%%' OR m.provider = 'db'",
     "estimate": "m.provider LIKE '%%(estimate)'",
-    "spot": "m.provider NOT LIKE 'MCX%%' AND m.provider NOT LIKE '%%(estimate)'",
+    "spot": "m.provider NOT ILIKE 'MCX%%' AND m.provider NOT ILIKE '%%MCX GOLD%%' AND m.provider NOT ILIKE '%%MCX SILVER%%' AND m.provider <> 'db' AND m.provider NOT LIKE '%%(estimate)'",
 }
 
 
 def _live_quote() -> dict | None:
-    quote = metals_tradingview.fetch_mcx()
+    # TradingView is the primary source, but a blocked datacentre IP or a
+    # scanner outage must not strand the dashboard on saved prices. Try the
+    # fallback provider under it, and only fall back to the last saved
+    # snapshot once both have failed.
+    quote = fetch_mcx_provider()
     if not quote:
         return None
 
@@ -98,16 +121,18 @@ def _live_quote() -> dict | None:
         spot_gram = Decimal(str(quote["spot"][spot_key])) * fx / ounce
         ratio = gram / spot_gram
         if not (Decimal("0.95") <= ratio <= Decimal("1.6")):
-            log.warning("MCX %s price rejected: %.2fx the converted spot price", key, ratio)
+            log.warning(
+                "MCX %s price rejected: %.2fx the converted spot price", key, ratio
+            )
             return None
         metals[symbol] = {
             "inr_per_gram": gram,
-            "source": f"MCX {key.upper()} front-month futures",
+            "source": f"{quote['provider']} - MCX {key.upper()} front-month futures",
             "updated_at": quote["fetched_at"],
             "spot_inr_per_10g": spot_gram * Decimal("10"),
-            "usd_per_oz": quote["spot"][spot_key],
+            "usd_per_oz": Decimal(str(quote["spot"][spot_key])),
         }
-    return {"metals": metals, "fx": quote["fx"]}
+    return {"metals": metals, "fx": Decimal(str(quote["fx"]))}
 
 
 def feed_health(now: datetime | None = None) -> dict:
@@ -142,7 +167,7 @@ def _market_open_now() -> bool:
     return t <= now_time <= t_close
 
 
-def _today_open_per_10g() -> dict[str, float]:
+def _today_open_per_10g() -> dict[str, Decimal]:
     """First saved reading of the current IST day, per 10 g.
 
     The dashboard compares the live close with this value to show the day's
@@ -162,7 +187,7 @@ def _today_open_per_10g() -> dict[str, float]:
                 "ORDER BY m.symbol, s.captured_at ASC"
             )
             return {
-                symbol: float(rate) * 10
+                symbol: Decimal(str(rate)) * 10
                 for symbol, rate in cur.fetchall()
                 if rate is not None
             }
@@ -187,16 +212,20 @@ def get_latest_snapshot() -> dict:
                 "XAU": {
                     **live["metals"]["XAU"],
                     "live": True,
-                    "open_per_10g": opens.get("XAU"),
+                    "open_per_10g": (
+                        Decimal(str(opens.get("XAU"))) if opens.get("XAU") is not None else None
+                    ),
                 },
                 "XAG": {
                     **live["metals"]["XAG"],
                     "live": True,
-                    "open_per_10g": opens.get("XAG"),
+                    "open_per_10g": (
+                        Decimal(str(opens.get("XAG"))) if opens.get("XAG") is not None else None
+                    ),
                 },
             },
             "fx": {
-                "USD_INR": float(live["fx"]),
+                "USD_INR": live["fx"],
                 "FX_SOURCE": "TradingView",
             },
         }
@@ -220,12 +249,12 @@ def get_latest_snapshot() -> dict:
                 "output_currency": "INR",
                 "market_open": _market_open_now(),
                 "metals": {"XAU": {}, "XAG": {}},
-                "fx": {"USD_INR": 0.0},
+                "fx": {"USD_INR": Decimal("0")},
                 "fx_source": "db",
             }
 
         metals = {"XAU": {}, "XAG": {}}
-        fx = {"USD_INR": 0.0}
+        fx = {"USD_INR": Decimal("0")}
         fx_source = "db"
         snapshot_id = rows[0][0]
         opens = _today_open_per_10g()
@@ -238,14 +267,16 @@ def get_latest_snapshot() -> dict:
             provider = row[5] if row[5] else "db"
             updated_at = row[1].isoformat() if row[1] else None
 
-            per_10g = (inr_per_gram * Decimal("10")) if inr_per_gram is not None else None
+            per_10g = (Decimal(str(inr_per_gram)) * Decimal("10")) if inr_per_gram is not None else None
 
             entry = {
-                "inr_per_gram": float(inr_per_gram) if inr_per_gram is not None else None,
-                "inr_per_10g": float(per_10g) if per_10g is not None else None,
-                "usd_per_oz": float(usd_per_oz) if usd_per_oz is not None else None,
-                "open_per_10g": opens.get(
-                    symbol, float(per_10g) if per_10g is not None else None
+                "inr_per_gram": Decimal(str(inr_per_gram)) if inr_per_gram is not None else None,
+                "inr_per_10g": per_10g,
+                "usd_per_oz": Decimal(str(usd_per_oz)) if usd_per_oz is not None else None,
+                "open_per_10g": (
+                    Decimal(str(opens.get(symbol)))
+                    if opens.get(symbol) is not None
+                    else per_10g
                 ),
                 "updated_at": updated_at,
                 "source": provider,
@@ -263,7 +294,7 @@ def get_latest_snapshot() -> dict:
         )
         fx_row = cur.fetchone()
         if fx_row and fx_row[0] is not None:
-            fx["USD_INR"] = float(fx_row[0])
+            fx["USD_INR"] = Decimal(str(fx_row[0]))
             fx_source = fx_row[1] if fx_row[1] else "db"
 
         return {
@@ -278,6 +309,7 @@ def get_latest_snapshot() -> dict:
         }
     finally:
         conn.close()
+
 
 def get_open_close_delta(metal: str, family: str | None = None) -> dict:
     """Open/close delta for a metal symbol (XAU or XAG).
@@ -315,7 +347,9 @@ def get_open_close_delta(metal: str, family: str | None = None) -> dict:
             (metal,),
         )
         row_open = cur.fetchone()
-        open_ = Decimal(str(row_open[0])) if row_open and row_open[0] is not None else close
+        open_ = (
+            Decimal(str(row_open[0])) if row_open and row_open[0] is not None else close
+        )
         delta = close - open_
         delta_pct = (delta / open_ * Decimal("100")) if open_ != 0 else Decimal("0")
         return {

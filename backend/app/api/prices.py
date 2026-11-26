@@ -22,39 +22,41 @@ def latest():
         return jsonify({"error": "No current or saved market prices are available"}), 503
     usd_inr = snap["fx"]["USD_INR"]
 
-    gold_10g = gold["inr_per_gram"] * 10 if gold.get("inr_per_gram") is not None else None
-    silver_10g = silver["inr_per_gram"] * 10 if silver.get("inr_per_gram") is not None else None
-    gold_open = gold.get("open_per_10g")
-    silver_open = silver.get("open_per_10g")
-    # Use the snapshot's own live flag. A saved row also has usd_per_oz, so
-    # testing that field alone labelled stale DB fallbacks as live.
-    gold_live = bool(gold.get("live"))
-    silver_live = bool(silver.get("live"))
+    # Both the live provider and the DB fallback store the rate per gram. The
+    # dashboard always displays a per-10 g number, so expose ``close`` as that
+    # value and keep ``inr_per_gram`` for the per-gram detail. ``Decimal``
+    # (straight out of PostgreSQL and the live provider) is not JSON-safe in
+    # older Flask, so coerce to float here — the frontend expects a number.
+    def _to_number(value):
+        try:
+            return float(Decimal(str(value)))
+        except Exception:
+            return value
 
     return jsonify({
         "gold": {
-            "open": gold_open,
-            "close": gold_10g,
-            "usd_per_oz": gold["usd_per_oz"],
-            "inr_per_gram": gold["inr_per_gram"],
+            "open": gold.get("open_per_10g"),
+            "close": _to_number(gold["inr_per_gram"]) * 10 if gold.get("inr_per_gram") is not None else None,
+            "usd_per_oz": _to_number(gold["usd_per_oz"]),
+            "inr_per_gram": _to_number(gold["inr_per_gram"]),
             "updated_at": gold["updated_at"],
             "source": gold["source"],
-            "live": gold_live,
+            "live": gold.get("live", False),
             "estimated": gold.get("estimated", False),
-            "spot_inr_per_10g": gold.get("spot_inr_per_10g"),
+            "spot_inr_per_10g": _to_number(gold.get("spot_inr_per_10g")),
         },
         "silver": {
-            "open": silver_open,
-            "close": silver_10g,
-            "usd_per_oz": silver["usd_per_oz"],
-            "inr_per_gram": silver["inr_per_gram"],
-            "live": silver_live,
+            "open": silver.get("open_per_10g"),
+            "close": _to_number(silver["inr_per_gram"]) * 10 if silver.get("inr_per_gram") is not None else None,
+            "usd_per_oz": _to_number(silver["usd_per_oz"]),
+            "inr_per_gram": _to_number(silver["inr_per_gram"]),
+            "live": silver.get("live", False),
             "updated_at": silver["updated_at"],
             "source": silver["source"],
             "estimated": silver.get("estimated", False),
-            "spot_inr_per_10g": silver.get("spot_inr_per_10g"),
+            "spot_inr_per_10g": _to_number(silver.get("spot_inr_per_10g")),
         },
-        "fx": {"USD_INR": usd_inr},
+        "fx": {"USD_INR": _to_number(usd_inr)},
         "market_open": snap["market_open"],
         "captured_at": snap["captured_at"],
         "feed": feed_health(),
@@ -91,8 +93,8 @@ def purity():
     snap = get_latest_snapshot()
     gold = snap["metals"]["XAU"]
     silver = snap["metals"]["XAG"]
-    gold_10g = gold["inr_per_gram"] * 10 if gold.get("inr_per_gram") is not None else Decimal("0")
-    silver_10g = silver["inr_per_gram"] * 10 if silver.get("inr_per_gram") is not None else Decimal("0")
+    gold_10g = Decimal(str(gold["inr_per_gram"])) * 10
+    silver_10g = Decimal(str(silver["inr_per_gram"])) * 10
     return jsonify({
         "purity": purity_rows(gold_10g, silver_10g),
         "gold_24k_per_10g": str(gold_10g.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
@@ -107,59 +109,10 @@ def states():
     snap = get_latest_snapshot()
     gold = snap["metals"]["XAU"]
     silver = snap["metals"]["XAG"]
-    gold_10g = gold["inr_per_gram"] * 10 if gold.get("inr_per_gram") is not None else Decimal("0")
-    silver_10g = silver["inr_per_gram"] * 10 if silver.get("inr_per_gram") is not None else Decimal("0")
+    gold_10g = Decimal(str(gold["inr_per_gram"])) * 10
+    silver_10g = Decimal(str(silver["inr_per_gram"])) * 10
     return jsonify({
         "states": state_rows(gold_10g, silver_10g),
         "gold_24k_per_10g": str(gold_10g.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
         "silver_per_10g": str(silver_10g.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
-    }), 200
-
-
-@prices_bp.route("/schedule", methods=["GET"])
-def schedule():
-    """Notification schedule matching HTML reference."""
-    return jsonify([
-        {
-            "name": "Market open",
-            "time": "09:00",
-            "tz": "Asia/Kolkata",
-            "zone": "IST",
-            "days": "Mon-Fri",
-            "enabled": True,
-        },
-        {
-            "name": "Market close",
-            "time": "23:55",
-            "tz": "Asia/Kolkata",
-            "zone": "IST",
-            "days": "Mon-Thu",
-            "enabled": True,
-        },
-        {
-            "name": "Weekly close",
-            "time": "23:55",
-            "tz": "Asia/Kolkata",
-            "zone": "IST",
-            "days": "Fri",
-            "enabled": True,
-        },
-    ]), 200
-
-
-@prices_bp.route("/destinations", methods=["GET"])
-def destinations():
-    """Telegram notification destinations."""
-    return jsonify([
-        {"name": "Metals Watch", "platform": "Telegram", "enabled": True},
-        {"name": "Test group", "platform": "Telegram", "enabled": False},
-    ]), 200
-
-
-@prices_bp.route("/health", methods=["GET"])
-def health_check():
-    """Lightweight health check. Matches HTML reference market status."""
-    return jsonify({
-        "status": "ok",
-        "market_open": _market_open_now(),
     }), 200

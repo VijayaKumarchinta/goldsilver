@@ -153,6 +153,22 @@ export function useApi() {
   // The socket snapshot has no feed-health block, so the stale banner would
   // otherwise only refresh on mount/reconnect. Poll the REST endpoint that
   // exposes it on the same 5-minute tick.
+
+  // When the page comes back after a reload, the banner must not outlive a
+  // successful reload. readReload() re-checks every source the first time
+  // loadAll() runs (mount, reconnect) and resets `error` on success.
+  async function readReload() {
+    const [latestResult] = await Promise.allSettled([getJson('/prices/latest', 'Reload price feed')])
+    if (latestResult.status === 'fulfilled') {
+      const snapshot = normalizeSnapshot(latestResult.value)
+      if (snapshot) {
+        prices.value = snapshot
+        marketOpen.value = Boolean(snapshot.market_open)
+        error.value = null
+      }
+    }
+  }
+
   async function refreshFeedHealth() {
     try {
       const snapshot = normalizeSnapshot(await getJson('/prices/latest', 'Feed health'))
@@ -173,10 +189,20 @@ export function useApi() {
     return refreshChartData()
   }
 
+  // Called by loadAll() on mount and by App.vue when the user retries a
+  // failed data load. After a full reload both paths re-read every source;
+  // only then does the stale banner receive the all-clear.
+  async function retryLoad() {
+    await loadAll()
+    if (!error.value) {
+      readReload()
+    }
+  }
+
   let chartTimer = null
 
-  onMounted(() => {
-    loadAll()
+  onMounted(async () => {
+    await retryLoad()
     chartTimer = setInterval(() => {
       refreshChartData()
       refreshFeedHealth()

@@ -48,7 +48,8 @@ def test_state_rows_cover_every_configured_state():
     rows = state_rows(Decimal("120000"), Decimal("1400"))
     assert len(rows) == len(STATE_DATA)
     assert {row["state"] for row in rows} == {state for state, _ in STATE_DATA}
-    assert all(row["diff_pct"] == "0.00" for row in rows)
+    # diff_pct is the 24K-vs-22K spread: (1 - 0.916) / 1 * 100 = 8.40%.
+    assert all(row["diff_pct"] == "8.40" for row in rows)
 
 
 def test_next_send_is_aligned_to_a_real_cron_tick():
@@ -95,6 +96,48 @@ def test_latest_does_not_label_a_saved_fallback_as_live(monkeypatch):
 
     assert payload["gold"]["live"] is False
     assert payload["silver"]["live"] is False
+
+
+def test_purity_and_states_survive_the_decimal_rate_snapshot(monkeypatch):
+    # Every path through get_latest_snapshot() now returns Decimal rates:
+    # the live provider returns Decimal and the saved-price fallback stores
+    # exactly what PostgreSQL handed back. The rate helpers do Decimal
+    # arithmetic, so callers never need to coerce.
+    fallback = {
+        "captured_at": "2026-11-26T06:25:00+00:00",
+        "market_open": True,
+        "metals": {
+            "XAU": {"inr_per_gram": Decimal("11991.8"), "usd_per_oz": Decimal("3481.6"), "live": False},
+            "XAG": {"inr_per_gram": Decimal("140.16"), "usd_per_oz": Decimal("39.24"), "live": False},
+        },
+        "fx": {"USD_INR": Decimal("92.22")},
+    }
+    monkeypatch.setattr(prices_api, "get_latest_snapshot", lambda: fallback)
+
+    app = Flask(__name__)
+    app.register_blueprint(prices_api.prices_bp, url_prefix="/api/prices")
+    client = app.test_client()
+
+    purity = client.get("/api/prices/purity")
+    assert purity.status_code == 200
+    payload = purity.get_json()
+    assert payload["gold_24k_per_10g"] == "119918.00"
+    by_label = {row["label"]: row for row in payload["purity"]}
+    assert by_label["Gold 24K"]["per_gram"] == "11991.80"
+    assert by_label["Silver 999"]["per_gram"] == "140.16"
+
+    states = client.get("/api/prices/states")
+    assert states.status_code == 200
+    assert states.get_json()["gold_24k_per_10g"] == "119918.00"
+
+
+def test_purity_rows_accepts_integer_inputs():
+    # A JSON/DB boundary may hand us plain ints (Flask serialises Decimal as
+    # str and PostgreSQL integer columns come back as int). The purity rows
+    # must not raise AttributeError: 'int' object has no attribute 'quantize'.
+    rows = purity_rows(120000, 1400)
+    assert rows[0]["per_gram"] == "12000.00"
+    assert rows[3]["per_gram"] == "140.00"
 
 
 def test_price_message_is_short_and_keeps_the_key_numbers():

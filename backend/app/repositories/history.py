@@ -1,4 +1,3 @@
-from datetime import timedelta
 from decimal import Decimal
 from psycopg2.extras import RealDictCursor
 from app.extensions import get_db
@@ -28,6 +27,9 @@ def get_chart_history(range_val: str = "7D") -> dict:
     reported per gram (inr_per_gram). Series are raw readings,
     one point per snapshot timestamp, only where that metal was
     actually recorded. Long ranges are downsampled to MAX_POINTS.
+
+    ``get_latest_snapshot()`` now returns Decimal rates, so the series
+    are rounded to two decimals here before they cross the JSON boundary.
     """
     conn = get_db()
     try:
@@ -75,7 +77,7 @@ def get_chart_history(range_val: str = "7D") -> dict:
                 t,
                 {"time": t, "XAU": None, "XAG": None},
             )
-            point[r["symbol"]] = float(r["inr_per_gram"])
+            point[r["symbol"]] = Decimal(str(r["inr_per_gram"]))
 
         # Chronological order, then bounded evenly across the range.
         sorted_items = sorted(by_time.values(), key=lambda x: x["time"])
@@ -88,10 +90,10 @@ def get_chart_history(range_val: str = "7D") -> dict:
         for item in sorted_items:
             labels.append(item["time"])
             gold_series.append(
-                round(item["XAU"] * 10, 2) if item["XAU"] is not None else None
+                (item["XAU"] * 10).quantize(Decimal("0.01")) if item["XAU"] is not None else None
             )
             silver_series.append(
-                round(item["XAG"], 2) if item["XAG"] is not None else None
+                item["XAG"].quantize(Decimal("0.01")) if item["XAG"] is not None else None
             )
 
         return {
@@ -100,6 +102,5 @@ def get_chart_history(range_val: str = "7D") -> dict:
             "silver": silver_series,
             "live": bool(rows),
         }
-
     finally:
         conn.close()

@@ -16,7 +16,14 @@ def _ist_time(iso: str) -> str:
 
 
 def _number(value) -> str:
-    return f"{Decimal(str(value)):,.2f}"
+    # Coerce numeric inputs to Decimal. ``Decimal(str(value))`` is unsafe for
+    # binary floats (1999.25 renders as "1999.2500000000001") and for plain
+    # ints (which are always integral). Convert once here, where the input is
+    # still just a Python value, then format the rounded Decimal.
+    try:
+        return f"{Decimal(value):,.2f}"
+    except Exception:
+        return str(value)
 
 
 def format_price_message(snapshot: dict, event_label: str) -> str:

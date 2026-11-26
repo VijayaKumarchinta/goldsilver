@@ -7,7 +7,7 @@ import PurityTable from './components/PurityTable.vue'
 import { useApi } from './composables/useApi'
 import { money } from './utils/format.js'
 
-const { prices, chart, logsData, purity, marketOpen, loading, error, refreshChart } = useApi()
+const { prices, chart, logsData, purity, marketOpen, loading, error, refreshChart, retryLoad } = useApi()
 const chartRange = ref('1D')
 
 function parseDate(value) {
@@ -176,6 +176,7 @@ function onRangeChange(range) {
       </section>
 
       <div v-if="error" class="dashboard-alert" role="alert">{{ error }}</div>
+      <button type="button" class="retry-btn" @click="retryLoad()" :disabled="error === null">Retry load</button>
       <p class="sr-only" aria-live="polite" aria-atomic="true">{{ feedAnnouncement }}</p>
       <div v-if="feedAlert" class="dashboard-alert feed-alert" role="status">{{ feedAlert }}</div>
       <div v-if="!prices && loading" class="dashboard-empty" role="status">
@@ -350,6 +351,27 @@ function onRangeChange(range) {
 </template>
 
 <style scoped>
+.retry-btn {
+  align-self: flex-start;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.retry-btn:hover:not(:disabled) {
+  border-color: var(--ink-2);
+  color: var(--ink);
+}
+
+.retry-btn:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
 .dashboard-main {
   max-width: 1440px;
   gap: 18px;
