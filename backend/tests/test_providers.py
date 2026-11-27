@@ -20,6 +20,12 @@ from app.services import market_data
 
 SCAN = {
     "data": [
+        # Continuous front-month MCX contracts (required, authoritative): the
+        # scanner returns these as the MCX index prices in INR.
+        {"s": "MCX:GOLD", "d": [124700.0]},
+        {"s": "MCX:SILVER", "d": [152498.0]},
+        # Month-suffixed MCX symbols: older scanner replies that carry the
+        # same MCX index, kept here for compatibility with the feed request.
         {"s": "MCX:GOLD1!", "d": [124700.0]},
         {"s": "MCX:SILVER1!", "d": [152498.0]},
         {"s": "FX_IDC:USDINR", "d": [92.77]},
