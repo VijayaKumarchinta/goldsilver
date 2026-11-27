@@ -1,4 +1,4 @@
-"""Live MCX gold/silver futures, USD/INR and COMEX references in one request.
+"""Live MCX gold/silver futures, USD/INR and COMEX references from TradingView.
 
 mcxindia.com answers HTTP 403 to datacentre IPs, which is every Render instance.
 TradingView's public scanner serves the same MCX front-month continuous contract
@@ -24,6 +24,7 @@ from app.config import Config
 log = logging.getLogger(__name__)
 
 SCAN_URL = "https://scanner.tradingview.com/global/scan"
+SYMBOL_URL = "https://scanner.tradingview.com/symbol"
 GOLD_MCX = "MCX:GOLD1!"
 SILVER_MCX = "MCX:SILVER1!"
 USD_INR = "FX_IDC:USDINR"
@@ -94,8 +95,8 @@ def parse_scan(payload: dict) -> dict:
     }
 
 
-def _request_quote() -> dict:
-    """One scanner request. Raises on any failure so the caller owns backoff."""
+def _batch_payload() -> dict:
+    """One POST for all five symbols. Raises on any failure."""
     response = requests.post(
         SCAN_URL,
         headers=HEADERS,
@@ -106,7 +107,43 @@ def _request_quote() -> dict:
         timeout=15,
     )
     response.raise_for_status()
-    quote = parse_scan(response.json())
+    return response.json()
+
+
+def _symbol_payload() -> dict:
+    """Per-symbol GETs, shaped like a scanner response.
+
+    The batch endpoint enforces a per-IP quota that a shared cloud egress IP
+    can exhaust (Render answers HTTP 429 for the whole instance). The
+    per-symbol endpoint is a different, much lighter code path, so it is tried
+    when the batch call is refused.
+    """
+    rows = []
+    for ticker in TICKERS:
+        response = requests.get(
+            SYMBOL_URL,
+            headers=HEADERS,
+            params={"symbol": ticker, "fields": "close"},
+            timeout=15,
+        )
+        response.raise_for_status()
+        rows.append({"s": ticker, "d": [response.json().get("close")]})
+    return {"data": rows}
+
+
+def _request_quote() -> dict:
+    """One quote. Raises on any failure so the caller owns the backoff."""
+    try:
+        payload = _batch_payload()
+    except Exception as exc:  # 429, timeout, changed payload
+        log.warning(
+            "Batch scanner refused (%s: %s); trying per-symbol quotes",
+            type(exc).__name__,
+            str(exc)[:120],
+        )
+        payload = _symbol_payload()
+
+    quote = parse_scan(payload)
     quote["fetched_at"] = datetime.now(timezone.utc)
     quote["provider"] = "TradingView"
     quote["cached"] = False

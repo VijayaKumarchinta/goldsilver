@@ -82,8 +82,41 @@ def test_scan_response_is_cached_between_calls(monkeypatch):
     assert first["gold"]["price"] == 124700.0
 
 
+def test_batch_refusal_falls_back_to_per_symbol_quotes(monkeypatch, caplog):
+    closes = {ticker: row["d"][0] for ticker, row in zip(
+        ("MCX:GOLD1!", "MCX:SILVER1!", "FX_IDC:USDINR", "COMEX:GC1!", "COMEX:SI1!"), SCAN["data"]
+    )}
+    calls = []
+
+    monkeypatch.setattr(tv.requests, "post", lambda *a, **k: FakeResponse(status_code=429))
+
+    def fake_get(url, params=None, **kwargs):
+        calls.append(params["symbol"])
+        return FakeResponse({"close": closes[params["symbol"]]})
+
+    monkeypatch.setattr(tv.requests, "get", fake_get)
+
+    with caplog.at_level(logging.WARNING):
+        quote = tv.fetch_mcx()
+
+    assert calls == ["MCX:GOLD1!", "MCX:SILVER1!", "FX_IDC:USDINR", "COMEX:GC1!", "COMEX:SI1!"]
+    assert quote["gold"]["price"] == 124700.0
+    assert quote["silver"]["price"] == 152498.0
+    assert quote["fx"] == 92.77
+    assert quote["cached"] is False
+    assert "per-symbol" in caplog.text
+
+
+def test_both_endpoints_failing_returns_no_quote(monkeypatch):
+    monkeypatch.setattr(tv.requests, "post", lambda *a, **k: FakeResponse(status_code=429))
+    monkeypatch.setattr(tv.requests, "get", lambda *a, **k: FakeResponse(status_code=429))
+
+    assert tv.fetch_mcx() is None
+
+
 def test_rate_limit_keeps_the_last_quote_without_claiming_a_new_reading(monkeypatch):
     monkeypatch.setattr(tv.requests, "post", lambda *a, **k: FakeResponse(SCAN))
+    monkeypatch.setattr(tv.requests, "get", lambda *a, **k: FakeResponse(status_code=429))
     first = tv.fetch_mcx()
 
     monkeypatch.setattr(
@@ -103,6 +136,7 @@ def test_rate_limit_keeps_the_last_quote_without_claiming_a_new_reading(monkeypa
 def test_cached_quote_expires_at_the_feed_threshold(monkeypatch):
     monkeypatch.setattr(tv, "MAX_CACHED_QUOTE_AGE_SECONDS", 120)
     monkeypatch.setattr(tv.requests, "post", lambda *a, **k: FakeResponse(status_code=429))
+    monkeypatch.setattr(tv.requests, "get", lambda *a, **k: FakeResponse(status_code=429))
     tv._cache.update(
         {
             "data": _quote(),
