@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from app.extensions import get_db
 from app.messaging.telegram import TelegramSender
@@ -83,23 +84,29 @@ def get_notification_status() -> dict:
             default=None,
         )
         if baseline is None or now >= baseline + interval:
-            status["next_send_at"] = _next_cron_slot(now)
+            status["next_send_at"] = _next_cron_slot_ist(now)
         else:
-            status["next_send_at"] = _next_cron_slot(baseline + interval)
+            status["next_send_at"] = _next_cron_slot_ist(baseline + interval)
         status["interval_minutes"] = 30
         return status
     finally:
         conn.close()
 
 
-def _next_cron_slot(moment: datetime) -> datetime:
-    """Next :00/:30 tick, matching the periodic_update cron in IST/UTC."""
+def _next_cron_slot_ist(moment: datetime) -> datetime:
+    """Next IST :00/:30 tick, so 'Next send' uses the same clock as the
+    dashboard and the Telegram 'Next update'. The apscheduler cron for the
+    periodic_update job still runs in UTC, but the value the UI reads is the
+    IST slate it understands, so it is never a stale UTC timestamp that the
+    dashboard shows as already past.
+    """
+    moment = moment.astimezone(ZoneInfo("Asia/Kolkata"))
     moment = moment.replace(second=0, microsecond=0)
     if moment.minute in (0, 30):
-        return moment
+        return moment.astimezone(timezone.utc)
     if moment.minute < 30:
-        return moment.replace(minute=30)
-    return (moment + timedelta(hours=1)).replace(minute=0)
+        return moment.replace(minute=30).astimezone(timezone.utc)
+    return (moment + timedelta(hours=1)).replace(minute=0).astimezone(timezone.utc)
 
 
 def has_scheduled_slot(scheduled_for: datetime) -> bool:

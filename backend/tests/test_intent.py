@@ -16,7 +16,7 @@ from app.repositories.history import MAX_POINTS, _downsample
 from app.services.market_data import _FAMILY_SQL
 from app.scheduler import manager
 from app.services import notification_dispatcher as dispatcher
-from app.services.notification_dispatcher import _next_cron_slot
+from app.services.notification_dispatcher import _next_cron_slot_ist
 from app.services.message_formatter import format_price_message
 from app.services.rates import KARAT_FACTORS, STATE_DATA, purity_rows, state_rows
 
@@ -62,16 +62,33 @@ def test_state_rows_cover_every_configured_state():
 
 
 def test_next_send_is_aligned_to_a_real_cron_tick():
-    assert _next_cron_slot(
+    # The client drives 'Next send' from IST only (the Telegram 'Next update'
+    # and the dashboard _next_ist_load share the same clock). Pass a UTC
+    # moment in and get the IST :00/:30 boundary back, converted to UTC.
+    # A :30 (IST) moment lands as itself; a minute past the slot advances to
+    # the next hour; before :30 it rolls forward to the next :30.
+    assert _next_cron_slot_ist(
         datetime(2026, 11, 25, 14, 6, tzinfo=timezone.utc)
     ) == datetime(2026, 11, 25, 14, 30, tzinfo=timezone.utc)
-    assert _next_cron_slot(
+    assert _next_cron_slot_ist(
         datetime(2026, 11, 25, 14, 36, tzinfo=timezone.utc)
     ) == datetime(2026, 11, 25, 15, 0, tzinfo=timezone.utc)
-    assert _next_cron_slot(
+    assert _next_cron_slot_ist(
         datetime(2026, 11, 25, 14, 30, tzinfo=timezone.utc)
     ) == datetime(2026, 11, 25, 14, 30, tzinfo=timezone.utc)
 
+
+def test_next_send_is_aligned_to_a_real_cron_tick_utc_boundary():
+    # The stored next_send_at is a UTC instant that corresponds to the IST
+    # boundary. After 14:30:59 IST the next slate is 15:00 IST, never a tick
+    # already behind the user's clock. A UTC instant that is still inside the
+    # current IST :30 slot must not roll back to the previous slate.
+    # 14:30:59 UTC == 14:00:59 IST, which is inside the 13:30-14:00 slot, so
+    # the next slate is 14:30 IST (19:30 UTC). 14:30:59 is on the 14:30 IST
+    # slate only if the UTC falls on that IST boundary.
+    assert _next_cron_slot_ist(
+        datetime(2026, 11, 25, 19, 30, 59, tzinfo=timezone.utc)
+    ) == datetime(2026, 11, 25, 19, 30, tzinfo=timezone.utc)
 
 def test_latest_does_not_label_a_saved_fallback_as_live(monkeypatch):
     fallback = {
