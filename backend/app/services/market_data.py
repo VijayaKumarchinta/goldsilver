@@ -141,11 +141,17 @@ def _live_quote() -> dict | None:
             return None
         spot_gram = Decimal(str(spot_price)) * fx / ounce
         ratio = gram / spot_gram
-        if not (Decimal("0.95") <= ratio <= Decimal("1.6")):
+        # Keep the comparison as a diagnostic only. The scanner and the COMEX
+        # reference can legitimately drift by more than the old 0.95-1.6 band
+        # (export/import flows, spot-futures lag, a stale USD/INR), and a hard
+        # rejection turned a one-off mismatch into "live MCX market data
+        # unavailable" for the whole scheduler loop. A wider band keeps the
+        # dashboard live while still logging the divergence for triage.
+        if not (Decimal("0.6") <= ratio <= Decimal("2.5")):
             log.warning(
-                "MCX %s price rejected: %.2fx the converted spot price", key, ratio
+                "MCX %s price diverges %.2fx from the converted spot price (flagging, not rejecting)",
+                key, ratio,
             )
-            return None
         metals[symbol] = {
             "inr_per_gram": gram,
             "source": f"{quote['provider']} - MCX {key.upper()} front-month futures",
