@@ -51,10 +51,12 @@ const liveData = computed(() => prices.value?.metals ?? null)
 const gold = computed(() => liveData.value?.XAU ?? null)
 const silver = computed(() => liveData.value?.XAG ?? null)
 const feedLive = computed(() => Boolean(gold.value?.live && silver.value?.live))
+
 const feedStatus = computed(() => {
   if (!prices.value) return loading.value ? 'Connecting to price feed' : 'Price feed unavailable'
   return feedLive.value ? 'Live prices' : 'Saved prices'
 })
+
 const feedAlert = computed(() => {
   const feed = prices.value?.feed
   if (!feed?.stale) return ''
@@ -89,16 +91,19 @@ watch(
   },
   { immediate: true },
 )
+
 const marketStatusText = computed(() => {
   if (!prices.value) return loading.value ? 'Checking market hours' : 'Market hours unavailable'
   return marketOpen.value ? 'MCX market open' : 'MCX market closed'
 })
+
 const providerName = computed(() => liveData.value?.XAU?.source || 'MCX futures')
+
 const usdInr = computed(() => {
-  // `liveData` is the metals map; the FX rate lives on the snapshot itself.
   const rate = Number(prices.value?.fx?.USD_INR)
   return Number.isFinite(rate) && rate > 0 ? rate.toFixed(4) : '-'
 })
+
 const telegramStatus = computed(() => {
   const status = logsData.value?.last_periodic_status
   if (status === 'failed') return 'Last attempt failed'
@@ -106,6 +111,7 @@ const telegramStatus = computed(() => {
   if (logsData.value?.last_periodic_sent_at) return 'Delivered'
   return 'No update sent yet'
 })
+
 const nextSendText = computed(() => {
   if (prices.value?.feed?.stale) return 'Paused until the market feed returns'
   const value = logsData.value?.next_send_at
