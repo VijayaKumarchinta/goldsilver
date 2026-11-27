@@ -8,7 +8,6 @@ from app.config import Config
 from app.extensions import get_db
 from app.messaging.base import Sender
 from app.providers import fetch_mcx as fetch_mcx_provider
-from app.providers import metals_tradingview
 
 log = logging.getLogger(__name__)
 
