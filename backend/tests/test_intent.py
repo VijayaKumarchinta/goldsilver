@@ -165,7 +165,8 @@ def test_price_message_is_short_and_keeps_the_key_numbers():
     assert "Gold 24K" in plain and "11,991.80" in plain
     assert "Silver 999" in plain and "140.16" in plain
     assert "USD/INR" in plain and "92.22" in plain
-    assert "Updated" in plain
+    assert "Next update at" in plain
+    assert "Updated" not in plain
     assert "COMEX" not in plain
     assert "GST" not in plain
     assert "Source" not in plain
