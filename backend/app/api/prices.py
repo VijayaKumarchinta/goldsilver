@@ -19,7 +19,10 @@ def latest():
     gold = snap["metals"]["XAU"]
     silver = snap["metals"]["XAG"]
     if not gold or not silver:
-        return jsonify({"error": "No current or saved market prices are available"}), 503
+        return (
+            jsonify({"error": "No current or saved market prices are available"}),
+            503,
+        )
     usd_inr = snap["fx"]["USD_INR"]
 
     # Both the live provider and the DB fallback store the rate per gram. The
@@ -46,34 +49,39 @@ def latest():
             return None
         return _round2(_to_number(quote["inr_per_gram"]) * 10)
 
-    return jsonify({
-        "gold": {
-            "open": _to_number(gold.get("open_per_10g")),
-            "close": _per_10g(gold),
-            "usd_per_oz": _to_number(gold["usd_per_oz"]),
-            "inr_per_gram": _to_number(gold["inr_per_gram"]),
-            "updated_at": gold["updated_at"],
-            "source": gold["source"],
-            "live": gold.get("live", False),
-            "estimated": gold.get("estimated", False),
-            "spot_inr_per_10g": _round2(gold.get("spot_inr_per_10g")),
-        },
-        "silver": {
-            "open": _to_number(silver.get("open_per_10g")),
-            "close": _per_10g(silver),
-            "usd_per_oz": _to_number(silver["usd_per_oz"]),
-            "inr_per_gram": _to_number(silver["inr_per_gram"]),
-            "live": silver.get("live", False),
-            "updated_at": silver["updated_at"],
-            "source": silver["source"],
-            "estimated": silver.get("estimated", False),
-            "spot_inr_per_10g": _round2(silver.get("spot_inr_per_10g")),
-        },
-        "fx": {"USD_INR": _to_number(usd_inr)},
-        "market_open": snap["market_open"],
-        "captured_at": snap["captured_at"],
-        "feed": feed_health(),
-    }), 200
+    return (
+        jsonify(
+            {
+                "gold": {
+                    "open": _to_number(gold.get("open_per_10g")),
+                    "close": _per_10g(gold),
+                    "usd_per_oz": _to_number(gold["usd_per_oz"]),
+                    "inr_per_gram": _to_number(gold["inr_per_gram"]),
+                    "updated_at": gold["updated_at"],
+                    "source": gold["source"],
+                    "live": gold.get("live", False),
+                    "estimated": gold.get("estimated", False),
+                    "spot_inr_per_10g": _round2(gold.get("spot_inr_per_10g")),
+                },
+                "silver": {
+                    "open": _to_number(silver.get("open_per_10g")),
+                    "close": _per_10g(silver),
+                    "usd_per_oz": _to_number(silver["usd_per_oz"]),
+                    "inr_per_gram": _to_number(silver["inr_per_gram"]),
+                    "live": silver.get("live", False),
+                    "updated_at": silver["updated_at"],
+                    "source": silver["source"],
+                    "estimated": silver.get("estimated", False),
+                    "spot_inr_per_10g": _round2(silver.get("spot_inr_per_10g")),
+                },
+                "fx": {"USD_INR": _to_number(usd_inr)},
+                "market_open": snap["market_open"],
+                "captured_at": snap["captured_at"],
+                "feed": feed_health(),
+            }
+        ),
+        200,
+    )
 
 
 @prices_bp.route("/chart/<range_val>", methods=["GET"])
@@ -108,11 +116,20 @@ def purity():
     silver = snap["metals"]["XAG"]
     gold_10g = Decimal(str(gold["inr_per_gram"])) * 10
     silver_10g = Decimal(str(silver["inr_per_gram"])) * 10
-    return jsonify({
-        "purity": purity_rows(gold_10g, silver_10g),
-        "gold_24k_per_10g": str(gold_10g.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
-        "silver_per_10g": str(silver_10g.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
-    }), 200
+    return (
+        jsonify(
+            {
+                "purity": purity_rows(gold_10g, silver_10g),
+                "gold_24k_per_10g": str(
+                    gold_10g.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                ),
+                "silver_per_10g": str(
+                    silver_10g.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                ),
+            }
+        ),
+        200,
+    )
 
 
 @prices_bp.route("/states", methods=["GET"])
@@ -124,8 +141,17 @@ def states():
     silver = snap["metals"]["XAG"]
     gold_10g = Decimal(str(gold["inr_per_gram"])) * 10
     silver_10g = Decimal(str(silver["inr_per_gram"])) * 10
-    return jsonify({
-        "states": state_rows(gold_10g, silver_10g),
-        "gold_24k_per_10g": str(gold_10g.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
-        "silver_per_10g": str(silver_10g.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
-    }), 200
+    return (
+        jsonify(
+            {
+                "states": state_rows(gold_10g, silver_10g),
+                "gold_24k_per_10g": str(
+                    gold_10g.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                ),
+                "silver_per_10g": str(
+                    silver_10g.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                ),
+            }
+        ),
+        200,
+    )

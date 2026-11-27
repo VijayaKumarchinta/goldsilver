@@ -40,7 +40,9 @@ def _all_live(snap: dict) -> bool:
     return all(snap.get("metals", {}).get(s, {}).get("live") for s in ("XAU", "XAG"))
 
 
-def _wait_for_live_prices(event_type: str, attempts: int = 3, delay_seconds: float = 2.0):
+def _wait_for_live_prices(
+    event_type: str, attempts: int = 3, delay_seconds: float = 2.0
+):
     """Retry the live quote briefly before a scheduled send is skipped."""
     for attempt in range(attempts):
         snapshot = get_latest_snapshot()
@@ -48,7 +50,9 @@ def _wait_for_live_prices(event_type: str, attempts: int = 3, delay_seconds: flo
             return snapshot
         if attempt < attempts - 1:
             time.sleep(delay_seconds)
-    log.warning("%s: live MCX prices still unavailable after %s attempts", event_type, attempts)
+    log.warning(
+        "%s: live MCX prices still unavailable after %s attempts", event_type, attempts
+    )
     return None
 
 
@@ -60,14 +64,23 @@ def scheduled_capture(event_type: str):
     try:
         snap = get_latest_snapshot()
         if not _all_live(snap):
-            snap = _wait_for_live_prices(event_type) if event_type in NOTIFY_EVENTS else None
+            snap = (
+                _wait_for_live_prices(event_type)
+                if event_type in NOTIFY_EVENTS
+                else None
+            )
             if snap is None:
-                log.warning("%s skipped: live MCX prices are unavailable, so nothing was saved or sent", event_type)
+                log.warning(
+                    "%s skipped: live MCX prices are unavailable, so nothing was saved or sent",
+                    event_type,
+                )
                 return
         snapshot_id = save_snapshot(snap, event_type=event_type)
         if event_type in {"market_open", "market_close", "weekly_close"}:
             created = create_jobs(snapshot_id, event_type)
-            log.info("Snapshot %s saved, %s notification jobs queued", snapshot_id, created)
+            log.info(
+                "Snapshot %s saved, %s notification jobs queued", snapshot_id, created
+            )
             result = dispatch_pending()
             log.info("Dispatch result: %s", result)
         else:
@@ -75,6 +88,7 @@ def scheduled_capture(event_type: str):
     except Exception as e:
         log.exception("Scheduled job failed for %s: %s", event_type, e)
         raise
+
 
 def scheduled_periodic_update():
     log.info("Checking whether the 30-minute Telegram update is due")
@@ -93,7 +107,10 @@ def scheduled_periodic_update():
         baseline = max(
             (
                 value
-                for value in (status["last_sent_at"], status["last_periodic_attempt_at"])
+                for value in (
+                    status["last_sent_at"],
+                    status["last_periodic_attempt_at"],
+                )
                 if value is not None
             ),
             default=None,
@@ -105,7 +122,9 @@ def scheduled_periodic_update():
             log.warning("Telegram update skipped: TELEGRAM_BOT_TOKEN is not configured")
             return {"due": False, "reason": "missing_bot_token"}
         if not list_enabled():
-            log.warning("Telegram update skipped: no enabled destinations are configured")
+            log.warning(
+                "Telegram update skipped: no enabled destinations are configured"
+            )
             return {"due": False, "reason": "no_destinations"}
 
         scheduled_for = now.replace(second=0, microsecond=0)
@@ -120,11 +139,15 @@ def scheduled_periodic_update():
             log.warning("Telegram update skipped: live MCX market data is unavailable")
             return {"due": False, "reason": "live_market_data_unavailable"}
         snapshot_id = save_snapshot(snapshot, event_type="periodic_update")
-        created = create_jobs(snapshot_id, "periodic_update", scheduled_for=scheduled_for)
+        created = create_jobs(
+            snapshot_id, "periodic_update", scheduled_for=scheduled_for
+        )
         if not created:
             if has_scheduled_slot(scheduled_for):
                 return {"due": False, "reason": "interval_already_processed"}
-            raise RuntimeError("Periodic Telegram update did not create any notification jobs")
+            raise RuntimeError(
+                "Periodic Telegram update did not create any notification jobs"
+            )
 
         result = dispatch_pending()
         log.info(
@@ -133,7 +156,12 @@ def scheduled_periodic_update():
             created,
             result,
         )
-        return {"due": True, "snapshot_id": snapshot_id, "created": created, "dispatch": result}
+        return {
+            "due": True,
+            "snapshot_id": snapshot_id,
+            "created": created,
+            "dispatch": result,
+        }
     except Exception:
         log.exception("Periodic Telegram update failed")
         raise

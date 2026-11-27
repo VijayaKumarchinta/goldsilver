@@ -13,7 +13,9 @@ def _downsample(items: list[dict], max_points: int) -> list[dict]:
     if len(items) <= max_points:
         return items
     step = len(items) / (max_points - 1)
-    indexes = sorted({int(index * step) for index in range(max_points - 1)} | {len(items) - 1})
+    indexes = sorted(
+        {int(index * step) for index in range(max_points - 1)} | {len(items) - 1}
+    )
     return [items[index] for index in indexes]
 
 
@@ -44,13 +46,11 @@ def get_chart_history(range_val: str = "7D") -> dict:
 
         # Pick the same family the current view is built from so the
         # chart never mixes two different providers into one trace.
-        cur.execute(
-            """
+        cur.execute("""
             SELECT m.provider FROM goldbot.metal_prices m
             JOIN goldbot.price_snapshots s ON s.id = m.snapshot_id
             ORDER BY s.captured_at DESC LIMIT 1
-            """
-        )
+            """)
         newest = cur.fetchone()
         family_sql = _FAMILY_SQL[source_family(newest["provider"] if newest else None)]
         cur.execute(
@@ -81,7 +81,9 @@ def get_chart_history(range_val: str = "7D") -> dict:
 
         # Chronological order, then bounded evenly across the range.
         sorted_items = sorted(by_time.values(), key=lambda x: x["time"])
-        sorted_items = _downsample(sorted_items, MAX_POINTS.get(range_val, MAX_POINTS["7D"]))
+        sorted_items = _downsample(
+            sorted_items, MAX_POINTS.get(range_val, MAX_POINTS["7D"])
+        )
 
         labels = []
         gold_series = []
@@ -90,10 +92,14 @@ def get_chart_history(range_val: str = "7D") -> dict:
         for item in sorted_items:
             labels.append(item["time"])
             gold_series.append(
-                (item["XAU"] * 10).quantize(Decimal("0.01")) if item["XAU"] is not None else None
+                (item["XAU"] * 10).quantize(Decimal("0.01"))
+                if item["XAU"] is not None
+                else None
             )
             silver_series.append(
-                item["XAG"].quantize(Decimal("0.01")) if item["XAG"] is not None else None
+                item["XAG"].quantize(Decimal("0.01"))
+                if item["XAG"] is not None
+                else None
             )
 
         return {

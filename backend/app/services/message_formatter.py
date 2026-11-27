@@ -25,9 +25,11 @@ def _next_ist_load() -> str:
     """
     now = datetime.now(ZoneInfo("Asia/Kolkata"))
     minute = (now.minute // 5) * 5
-    return now.replace(minute=minute, second=0, microsecond=0).astimezone(
-        ZoneInfo("Asia/Kolkata")
-    ).strftime("%d %b %Y, %I:%M %p IST")
+    return (
+        now.replace(minute=minute, second=0, microsecond=0)
+        .astimezone(ZoneInfo("Asia/Kolkata"))
+        .strftime("%d %b %Y, %I:%M %p IST")
+    )
 
 
 def _number(value) -> str:
@@ -101,10 +103,7 @@ def format_user_message(snapshot: dict) -> str:
     )
 
 
-_TELEGRAM_MD_V2_ESCAPE = {
-    ch: "\\" + ch
-    for ch in r"_*[]()~`>#+-=|{}.!"
-}
+_TELEGRAM_MD_V2_ESCAPE = {ch: "\\" + ch for ch in r"_*[]()~`>#+-=|{}.!"}
 
 
 # Telegram MarkdownV2 treats the rupee sign and em dash as special characters

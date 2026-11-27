@@ -9,6 +9,7 @@ from app.scheduler.jobs import scheduled_capture, scheduled_periodic_update
 log = logging.getLogger(__name__)
 _scheduler = None
 
+
 def start_scheduler():
     global _scheduler
     if _scheduler:
@@ -60,6 +61,7 @@ def start_scheduler():
         log.exception("Startup Telegram update failed")
 
     return _scheduler
+
 
 def shutdown_scheduler():
     global _scheduler

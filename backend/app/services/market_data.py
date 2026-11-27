@@ -67,6 +67,7 @@ def set_price_event(snapshot: dict | None, fresh: bool = True):
 
     try:
         from app import socketio as _socketio
+
         _sio = _socketio
         _sio.emit(
             "price_update",
@@ -127,7 +128,9 @@ def _live_quote() -> dict | None:
         ("XAU", "gold", 10, "XAU"),
         ("XAG", "silver", 1000, "XAG"),
     ):
-        gram = Decimal(str(quote[key]["price"])) / per_gram_divisor  # gold per 10 g, silver per kg
+        gram = (
+            Decimal(str(quote[key]["price"])) / per_gram_divisor
+        )  # gold per 10 g, silver per kg
         spot_price = (quote.get("spot") or {}).get(spot_key)
         if not spot_price or spot_price <= 0:
             log.warning(
@@ -239,14 +242,18 @@ def get_latest_snapshot() -> dict:
                     **live["metals"]["XAU"],
                     "live": True,
                     "open_per_10g": (
-                        Decimal(str(opens.get("XAU"))) if opens.get("XAU") is not None else None
+                        Decimal(str(opens.get("XAU")))
+                        if opens.get("XAU") is not None
+                        else None
                     ),
                 },
                 "XAG": {
                     **live["metals"]["XAG"],
                     "live": True,
                     "open_per_10g": (
-                        Decimal(str(opens.get("XAG"))) if opens.get("XAG") is not None else None
+                        Decimal(str(opens.get("XAG")))
+                        if opens.get("XAG") is not None
+                        else None
                     ),
                 },
             },
@@ -293,12 +300,20 @@ def get_latest_snapshot() -> dict:
             provider = row[5] if row[5] else "db"
             updated_at = row[1].isoformat() if row[1] else None
 
-            per_10g = (Decimal(str(inr_per_gram)) * Decimal("10")) if inr_per_gram is not None else None
+            per_10g = (
+                (Decimal(str(inr_per_gram)) * Decimal("10"))
+                if inr_per_gram is not None
+                else None
+            )
 
             entry = {
-                "inr_per_gram": Decimal(str(inr_per_gram)) if inr_per_gram is not None else None,
+                "inr_per_gram": (
+                    Decimal(str(inr_per_gram)) if inr_per_gram is not None else None
+                ),
                 "inr_per_10g": per_10g,
-                "usd_per_oz": Decimal(str(usd_per_oz)) if usd_per_oz is not None else None,
+                "usd_per_oz": (
+                    Decimal(str(usd_per_oz)) if usd_per_oz is not None else None
+                ),
                 "open_per_10g": (
                     Decimal(str(opens.get(symbol)))
                     if opens.get(symbol) is not None
@@ -351,8 +366,9 @@ def get_open_close_delta(metal: str, family: str | None = None) -> dict:
             "SELECT m.inr_per_gram "
             "FROM goldbot.metal_prices m "
             "JOIN goldbot.price_snapshots s ON m.snapshot_id = s.id "
-            "WHERE m.symbol = %s " + (f"AND {_FAMILY_SQL[family]} " if family else "") +
-            "ORDER BY s.captured_at DESC "
+            "WHERE m.symbol = %s "
+            + (f"AND {_FAMILY_SQL[family]} " if family else "")
+            + "ORDER BY s.captured_at DESC "
             "LIMIT 1",
             (metal,),
         )
@@ -367,8 +383,9 @@ def get_open_close_delta(metal: str, family: str | None = None) -> dict:
             "JOIN goldbot.price_snapshots s ON m.snapshot_id = s.id "
             "WHERE m.symbol = %s "
             "AND DATE(s.captured_at AT TIME ZONE 'Asia/Kolkata') "
-            "= (NOW() AT TIME ZONE 'Asia/Kolkata')::date " + (f"AND {_FAMILY_SQL[family]} " if family else "") +
-            "ORDER BY s.captured_at ASC "
+            "= (NOW() AT TIME ZONE 'Asia/Kolkata')::date "
+            + (f"AND {_FAMILY_SQL[family]} " if family else "")
+            + "ORDER BY s.captured_at ASC "
             "LIMIT 1",
             (metal,),
         )

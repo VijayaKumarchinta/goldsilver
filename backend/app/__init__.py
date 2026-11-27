@@ -21,10 +21,11 @@ logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
 socketio = SocketIO()
 
+
 def create_app(start_sched: bool = True):
     app = Flask(__name__)
     app.config.from_object(Config)
-    CORS(app) 
+    CORS(app)
 
     socketio.init_app(
         app,
@@ -41,6 +42,7 @@ def create_app(start_sched: bool = True):
     if dist.is_dir():
         index_html = dist / "index.html"
         if index_html.is_file():
+
             @app.route("/", defaults={"path": ""})
             @app.route("/<path:path>")
             def dashboard(path):
@@ -49,12 +51,14 @@ def create_app(start_sched: bool = True):
                 if path and (dist / path).is_file():
                     return send_from_directory(dist, path)
                 return send_from_directory(dist, "index.html")
+
         else:
+
             @app.route("/")
             def frontend_missing():
                 return (
                     "<!doctype html>\r\n"
-                    "<html lang=\"en\"><head><meta charset=\"utf-8\">\r\n"
+                    '<html lang="en"><head><meta charset="utf-8">\r\n'
                     "<title>GoldSilver Dashboard</title></head><body>\r\n"
                     "<h1>GoldSilver Dashboard</h1>\r\n"
                     "<p>The frontend build is not present yet.</p>\r\n"

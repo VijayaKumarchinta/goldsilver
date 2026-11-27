@@ -92,6 +92,7 @@ def _get_json(url: str, *, retries: int = 2) -> dict:
 
 def parse_spot(payload: dict) -> dict:
     """Normalise a compact spot payload into the provider quote shape."""
+
     def _get(path: str, *, default=None):
         cur = payload
         for key in path.split("."):
@@ -116,7 +117,11 @@ def parse_spot(payload: dict) -> dict:
             f"silver={xag_usd!r}, fx={fx!r}"
         )
 
-    if _safe_number(xau_usd) is None or _safe_number(xag_usd) is None or _safe_number(fx) is None:
+    if (
+        _safe_number(xau_usd) is None
+        or _safe_number(xag_usd) is None
+        or _safe_number(fx) is None
+    ):
         raise ValueError(
             f"Xaus returned non-numeric spot values: xau={xau_usd!r}, "
             f"silver={xag_usd!r}, fx={fx!r}"
@@ -152,9 +157,7 @@ def fetch_mcx() -> dict | None:
         quote["provider"] = "Xaus"
         quote["cached"] = False
     except Exception as exc:  # network, 429, changed payload
-        log.warning(
-            "Xaus spot feed failed: %s: %s", type(exc).__name__, str(exc)[:200]
-        )
+        log.warning("Xaus spot feed failed: %s: %s", type(exc).__name__, str(exc)[:200])
         if _cache["data"] is not None:
             return {**_cache["data"], "cached": True}
         return None

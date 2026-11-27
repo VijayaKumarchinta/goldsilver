@@ -23,32 +23,28 @@ def ensure_hourly_notification_schema():
     conn = get_db()
     try:
         cur = conn.cursor()
-        cur.execute(
-            """
+        cur.execute("""
             ALTER TABLE goldbot.notification_jobs
               ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMPTZ,
               ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            """
-        )
-        cur.execute(
-            """
+            """)
+        cur.execute("""
             CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_schedule_slot
             ON goldbot.notification_jobs (event_type, scheduled_for, destination_id)
             WHERE scheduled_for IS NOT NULL
-            """
-        )
+            """)
         conn.commit()
         _hourly_schema_ready = True
     finally:
         conn.close()
+
 
 def get_notification_status() -> dict:
     ensure_hourly_notification_schema()
     conn = get_db()
     try:
         cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute(
-            """
+        cur.execute("""
             SELECT
                 MAX(updated_at) FILTER (WHERE status = 'sent') AS last_sent_at,
                 MAX(updated_at) FILTER (
@@ -59,18 +55,15 @@ def get_notification_status() -> dict:
                     WHERE event_type IN ('periodic_update', 'hourly_update', 'hourly')
                 ) AS last_periodic_attempt_at
             FROM goldbot.notification_jobs
-            """
-        )
+            """)
         status = dict(cur.fetchone())
-        cur.execute(
-            """
+        cur.execute("""
             SELECT status
             FROM goldbot.notification_jobs
             WHERE event_type IN ('periodic_update', 'hourly_update', 'hourly')
             ORDER BY COALESCE(scheduled_for, updated_at) DESC, id DESC
             LIMIT 1
-            """
-        )
+            """)
         latest_periodic = cur.fetchone()
         status["last_periodic_status"] = (
             latest_periodic["status"] if latest_periodic else None
@@ -81,7 +74,10 @@ def get_notification_status() -> dict:
         baseline = max(
             (
                 value
-                for value in (status["last_sent_at"], status["last_periodic_attempt_at"])
+                for value in (
+                    status["last_sent_at"],
+                    status["last_periodic_attempt_at"],
+                )
                 if value is not None
             ),
             default=None,
@@ -94,6 +90,7 @@ def get_notification_status() -> dict:
         return status
     finally:
         conn.close()
+
 
 def _next_cron_slot(moment: datetime) -> datetime:
     """Next :00/:30 tick, matching the periodic_update cron in IST/UTC."""
@@ -124,6 +121,7 @@ def has_scheduled_slot(scheduled_for: datetime) -> bool:
     finally:
         conn.close()
 
+
 def create_jobs(
     snapshot_id: int,
     event_type: str,
@@ -152,6 +150,7 @@ def create_jobs(
         return created
     finally:
         conn.close()
+
 
 def _load_snapshot(cur, snapshot_id: int) -> dict:
     cur.execute(
@@ -194,6 +193,7 @@ def _load_snapshot(cur, snapshot_id: int) -> dict:
         "fx": {k: str(v) for k, v in (row["fx"] or {}).items()},
         "fx_source": row["fx_source"],
     }
+
 
 def dispatch_pending(sender: TelegramSender | None = None, limit: int = 20) -> dict:
     if sender is None:

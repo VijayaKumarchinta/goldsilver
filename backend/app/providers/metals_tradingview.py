@@ -81,9 +81,13 @@ def parse_scan(payload: dict) -> dict:
     for ticker in TICKERS:
         value = rows[ticker][0]
         if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise ValueError(f"scanner returned a non-numeric price for {ticker}: {value!r}")
+            raise ValueError(
+                f"scanner returned a non-numeric price for {ticker}: {value!r}"
+            )
         if not isfinite(value) or value <= 0:
-            raise ValueError(f"scanner returned an unusable price for {ticker}: {value!r}")
+            raise ValueError(
+                f"scanner returned an unusable price for {ticker}: {value!r}"
+            )
         values[ticker] = float(value)
 
     return {
@@ -142,7 +146,11 @@ def fetch_mcx() -> dict | None:
     with _state_lock:
         now = monotonic()
         data_at = _cache["data_at"]
-        if _cache["data"] is not None and data_at is not None and now - data_at < CACHE_SECONDS:
+        if (
+            _cache["data"] is not None
+            and data_at is not None
+            and now - data_at < CACHE_SECONDS
+        ):
             return _cache["data"]
         if _cache["retry_at"] is not None and now < _cache["retry_at"]:
             return _cached_quote_locked(now)
@@ -181,4 +189,6 @@ if __name__ == "__main__":
     print(f"GOLD   MCX front month  Rs {quote['gold']['price']:,.2f} per 10 g")
     print(f"SILVER MCX front month  Rs {quote['silver']['price']:,.2f} per kg")
     print(f"USD/INR {quote['fx']:.4f}")
-    print(f"COMEX gold {quote['spot']['XAU']:,.2f} USD/oz, silver {quote['spot']['XAG']:,.2f} USD/oz")
+    print(
+        f"COMEX gold {quote['spot']['XAU']:,.2f} USD/oz, silver {quote['spot']['XAG']:,.2f} USD/oz"
+    )

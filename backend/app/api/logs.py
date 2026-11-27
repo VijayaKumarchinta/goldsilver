@@ -25,12 +25,14 @@ def _safe_error(value):
 @logs_bp.route("", methods=["GET"])
 def list_logs():
     delivery = get_notification_status()
-    delivery = {key: _iso(value) if key.endswith("_at") else value for key, value in delivery.items()}
+    delivery = {
+        key: _iso(value) if key.endswith("_at") else value
+        for key, value in delivery.items()
+    }
     conn = get_db()
     try:
         cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute(
-            """
+        cur.execute("""
             SELECT j.id, j.event_type, j.status, j.attempts, j.last_error,
                    j.created_at, j.updated_at, j.scheduled_for,
                    d.channel, d.identifier, d.label
@@ -38,8 +40,7 @@ def list_logs():
             JOIN destinations d ON d.id = j.destination_id
             ORDER BY j.id DESC
             LIMIT 50
-            """
-        )
+            """)
         rows = cur.fetchall()
 
         if not rows:
@@ -52,20 +53,22 @@ def list_logs():
                 note = f"Delivery failed after {r['attempts']} attempts"
             elif r["attempts"] > 1:
                 note = f"{r['attempts'] - 1} retry"
-            logs.append({
-                "id": r["id"],
-                "event_type": r["event_type"],
-                "destination": r["label"] or r["identifier"],
-                "platform": r["channel"],
-                "status": r["status"],
-                "attempts": r["attempts"],
-                "created_at": _iso(r["created_at"]),
-                "updated_at": _iso(r["updated_at"]),
-                "scheduled_for": _iso(r["scheduled_for"]),
-                "sent_at": _iso(r["updated_at"]) if r["status"] == "sent" else None,
-                "note": note,
-                "last_error": _safe_error(r["last_error"]),
-            })
+            logs.append(
+                {
+                    "id": r["id"],
+                    "event_type": r["event_type"],
+                    "destination": r["label"] or r["identifier"],
+                    "platform": r["channel"],
+                    "status": r["status"],
+                    "attempts": r["attempts"],
+                    "created_at": _iso(r["created_at"]),
+                    "updated_at": _iso(r["updated_at"]),
+                    "scheduled_for": _iso(r["scheduled_for"]),
+                    "sent_at": _iso(r["updated_at"]) if r["status"] == "sent" else None,
+                    "note": note,
+                    "last_error": _safe_error(r["last_error"]),
+                }
+            )
         return jsonify({"logs": logs, "source": "db", **delivery}), 200
     finally:
         conn.close()

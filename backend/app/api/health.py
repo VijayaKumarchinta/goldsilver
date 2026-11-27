@@ -6,6 +6,7 @@ from app.scheduler import manager as scheduler_manager
 
 health_bp = Blueprint("health", __name__)
 
+
 @health_bp.route("", methods=["GET"])
 def health():
     db_ok = True
@@ -20,8 +21,10 @@ def health():
         db_ok = False
         db_err = str(e)
 
-    return jsonify({"status": "ok" if db_ok else "degraded",
-                    "db": db_ok, "db_error": db_err}), 200 if db_ok else 503
+    return jsonify(
+        {"status": "ok" if db_ok else "degraded", "db": db_ok, "db_error": db_err}
+    ), (200 if db_ok else 503)
+
 
 @health_bp.route("/scheduler", methods=["GET"])
 def scheduler_status():

@@ -1,8 +1,6 @@
 from decimal import Decimal, ROUND_HALF_UP
 from flask import current_app
 
-
-
 KARAT_FACTORS = {
     "24K": Decimal("1.000"),
     "22K": Decimal("0.916"),
@@ -55,21 +53,31 @@ def purity_rows(gold_per_10g, silver_per_10g) -> list[dict]:
     silver = _to_decimal(silver_per_10g)
     rows = []
     for label, factor in KARAT_FACTORS.items():
-        per_gram = (gold * factor / Decimal("10")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        per_gram = (gold * factor / Decimal("10")).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
         per_lot = (gold * factor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        rows.append({
-            "label": f"Gold {label}",
-            "per_gram": str(per_gram),
-            "per_lot": str(per_lot),
-            "unit": "/10 g",
-        })
+        rows.append(
+            {
+                "label": f"Gold {label}",
+                "per_gram": str(per_gram),
+                "per_lot": str(per_lot),
+                "unit": "/10 g",
+            }
+        )
     # Silver 999
-    rows.append({
-        "label": "Silver 999",
-        "per_gram": str((silver / Decimal("10")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
-        "per_lot": str(silver.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
-        "unit": "/10 g",
-    })
+    rows.append(
+        {
+            "label": "Silver 999",
+            "per_gram": str(
+                (silver / Decimal("10")).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
+            ),
+            "per_lot": str(silver.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "unit": "/10 g",
+        }
+    )
     return rows
 
 
@@ -100,17 +108,23 @@ def state_rows(gold_per_10g, silver_per_10g) -> list[dict]:
     gold = _to_decimal(gold_per_10g)
     silver = _to_decimal(silver_per_10g)
     state_gold = gold.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    state_gold_22k = (state_gold * Decimal("0.916")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    state_gold_22k = (state_gold * Decimal("0.916")).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
     state_silver = silver.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    diff_pct = ((state_gold - state_gold_22k) / state_gold * Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    diff_pct = ((state_gold - state_gold_22k) / state_gold * Decimal("100")).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
     rows = []
     for state, city in STATE_DATA:
-        rows.append({
-            "state": state,
-            "city": city,
-            "gold_24k": str(state_gold),
-            "gold_22k": str(state_gold_22k),
-            "silver": str(state_silver),
-            "diff_pct": str(diff_pct),
-        })
+        rows.append(
+            {
+                "state": state,
+                "city": city,
+                "gold_24k": str(state_gold),
+                "gold_22k": str(state_gold_22k),
+                "silver": str(state_silver),
+                "diff_pct": str(diff_pct),
+            }
+        )
     return rows

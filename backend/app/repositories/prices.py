@@ -1,6 +1,7 @@
 from psycopg2.extras import RealDictCursor
 from app.extensions import get_db
 
+
 def save_snapshot(snapshot: dict, event_type: str) -> int:
     conn = get_db()
     try:
@@ -39,7 +40,9 @@ def save_snapshot(snapshot: dict, event_type: str) -> int:
             )
 
         usd_inr = snapshot["fx"]["USD_INR"]
-        fx_provider_name = snapshot["fx"].get("FX_SOURCE") or snapshot.get("fx_source") or "db"
+        fx_provider_name = (
+            snapshot["fx"].get("FX_SOURCE") or snapshot.get("fx_source") or "db"
+        )
         cur.execute(
             """
             INSERT INTO fx_rates (snapshot_id, base, quote, rate, provider)
@@ -56,18 +59,17 @@ def save_snapshot(snapshot: dict, event_type: str) -> int:
     finally:
         conn.close()
 
+
 def get_latest() -> dict | None:
     conn = get_db()
     try:
         cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute(
-            """
+        cur.execute("""
             SELECT s.id, s.event_type, s.captured_at, s.base_currency, s.output_currency
             FROM price_snapshots s
             ORDER BY s.captured_at DESC
             LIMIT 1
-            """
-        )
+            """)
         snap = cur.fetchone()
         if not snap:
             return None

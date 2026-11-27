@@ -36,7 +36,9 @@ class FakeResponse:
 
     def raise_for_status(self):
         if self.status_code >= 400:
-            raise requests.HTTPError(f"{self.status_code} Client Error: Too Many Requests")
+            raise requests.HTTPError(
+                f"{self.status_code} Client Error: Too Many Requests"
+            )
 
     def json(self):
         return self.payload
@@ -102,7 +104,9 @@ def test_rate_limit_keeps_the_last_quote_without_claiming_a_new_reading(monkeypa
 
 def test_cached_quote_expires_at_the_feed_threshold(monkeypatch):
     monkeypatch.setattr(tv, "MAX_CACHED_QUOTE_AGE_SECONDS", 120)
-    monkeypatch.setattr(tv.requests, "post", lambda *a, **k: FakeResponse(status_code=429))
+    monkeypatch.setattr(
+        tv.requests, "post", lambda *a, **k: FakeResponse(status_code=429)
+    )
     tv._cache.update(
         {
             "data": _quote(),
@@ -164,8 +168,6 @@ def test_live_quote_carries_the_real_reading_and_freshness(monkeypatch):
 
 
 def test_cached_quote_is_reported_as_not_fresh(monkeypatch):
-    monkeypatch.setattr(
-        market_data, "fetch_mcx_provider", lambda: _quote(cached=True)
-    )
+    monkeypatch.setattr(market_data, "fetch_mcx_provider", lambda: _quote(cached=True))
 
     assert market_data._live_quote()["fresh"] is False

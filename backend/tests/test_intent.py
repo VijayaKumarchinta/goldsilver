@@ -62,15 +62,15 @@ def test_state_rows_cover_every_configured_state():
 
 
 def test_next_send_is_aligned_to_a_real_cron_tick():
-    assert _next_cron_slot(datetime(2026, 11, 25, 14, 6, tzinfo=timezone.utc)) == datetime(
-        2026, 11, 25, 14, 30, tzinfo=timezone.utc
-    )
-    assert _next_cron_slot(datetime(2026, 11, 25, 14, 36, tzinfo=timezone.utc)) == datetime(
-        2026, 11, 25, 15, 0, tzinfo=timezone.utc
-    )
-    assert _next_cron_slot(datetime(2026, 11, 25, 14, 30, tzinfo=timezone.utc)) == datetime(
-        2026, 11, 25, 14, 30, tzinfo=timezone.utc
-    )
+    assert _next_cron_slot(
+        datetime(2026, 11, 25, 14, 6, tzinfo=timezone.utc)
+    ) == datetime(2026, 11, 25, 14, 30, tzinfo=timezone.utc)
+    assert _next_cron_slot(
+        datetime(2026, 11, 25, 14, 36, tzinfo=timezone.utc)
+    ) == datetime(2026, 11, 25, 15, 0, tzinfo=timezone.utc)
+    assert _next_cron_slot(
+        datetime(2026, 11, 25, 14, 30, tzinfo=timezone.utc)
+    ) == datetime(2026, 11, 25, 14, 30, tzinfo=timezone.utc)
 
 
 def test_latest_does_not_label_a_saved_fallback_as_live(monkeypatch):
@@ -116,8 +116,16 @@ def test_purity_and_states_survive_the_decimal_rate_snapshot(monkeypatch):
         "captured_at": "2026-11-26T06:25:00+00:00",
         "market_open": True,
         "metals": {
-            "XAU": {"inr_per_gram": Decimal("11991.8"), "usd_per_oz": Decimal("3481.6"), "live": False},
-            "XAG": {"inr_per_gram": Decimal("140.16"), "usd_per_oz": Decimal("39.24"), "live": False},
+            "XAU": {
+                "inr_per_gram": Decimal("11991.8"),
+                "usd_per_oz": Decimal("3481.6"),
+                "live": False,
+            },
+            "XAG": {
+                "inr_per_gram": Decimal("140.16"),
+                "usd_per_oz": Decimal("39.24"),
+                "live": False,
+            },
         },
         "fx": {"USD_INR": Decimal("92.22")},
     }
@@ -153,8 +161,16 @@ def test_price_message_is_short_and_keeps_the_key_numbers():
     snapshot = {
         "captured_at": "2026-11-25T14:06:00+00:00",
         "metals": {
-            "XAU": {"inr_per_gram": "11991.80", "usd_per_oz": 3506.1, "source": "MCX GOLD"},
-            "XAG": {"inr_per_gram": "140.16", "usd_per_oz": 39.78, "source": "MCX SILVER"},
+            "XAU": {
+                "inr_per_gram": "11991.80",
+                "usd_per_oz": 3506.1,
+                "source": "MCX GOLD",
+            },
+            "XAG": {
+                "inr_per_gram": "140.16",
+                "usd_per_oz": 39.78,
+                "source": "MCX SILVER",
+            },
         },
         "fx": {"USD_INR": "92.22"},
     }
@@ -180,15 +196,17 @@ def test_dispatch_sends_to_chat_identifier_not_local_row_id(monkeypatch):
             pass
 
         def fetchall(self):
-            return [{
-                "id": 39,
-                "event_type": "periodic_update",
-                "attempts": 0,
-                "snapshot_id": 7,
-                "destination_id": 1,
-                "channel": "telegram",
-                "identifier": chat_id,
-            }]
+            return [
+                {
+                    "id": 39,
+                    "event_type": "periodic_update",
+                    "attempts": 0,
+                    "snapshot_id": 7,
+                    "destination_id": 1,
+                    "channel": "telegram",
+                    "identifier": chat_id,
+                }
+            ]
 
         def fetchone(self):
             return None
