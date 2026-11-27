@@ -58,6 +58,7 @@ export function useApi() {
   const purity = shallowRef(null)
   const loading = ref(false)
   const error = ref(null)
+  const dataAnnouncement = ref('')
   const marketOpen = ref(false)
   const chartRange = ref('1D')
   const { latest, connected } = useSocket()
@@ -110,6 +111,7 @@ export function useApi() {
 
   async function loadAll() {
     loading.value = true
+    dataAnnouncement.value = 'Loading chart data'
     error.value = null
     const [latestResult, chartResult, logsResult, purityResult] = await Promise.allSettled([
       getJson('/prices/latest', 'Price feed'),
@@ -137,6 +139,10 @@ export function useApi() {
       error.value = connected.value ? message : `Socket disconnected - ${message}`
     }
     loading.value = false
+    dataAnnouncement.value = chart.value?.labels?.length ? 'Data loaded' : ''
+    if (!error.value && !loading.value) {
+      dataAnnouncement.value = 'Data loaded'
+    }
   }
 
   // The backend records a chart snapshot every 5 minutes, so refetch the
@@ -226,5 +232,6 @@ export function useApi() {
     connected,
     loadAll,
     refreshChart,
+    dataAnnouncement,
   }
 }

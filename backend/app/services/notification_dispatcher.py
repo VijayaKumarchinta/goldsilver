@@ -152,6 +152,58 @@ def create_jobs(
         conn.close()
 
 
+def _finish_job(
+    cur,
+    job_id: int,
+    new_attempts: int,
+    outcome: dict,
+    results: dict,
+) -> None:
+    """Apply the outcome of one delivery attempt to the job row and counters.
+
+    Three outcomes exist: the message was accepted (``ok``), the job exhausted
+    its retry budget, or a backoff slot still remains. The same three branches
+    were repeated inline in ``dispatch_pending``; this helper keeps that logic
+    in a single place. Returned values are appended to ``results`` in place.
+    """
+    if outcome.get("ok"):
+        cur.execute(
+            """
+            UPDATE notification_jobs
+            SET status = 'sent', attempts = %s, last_error = NULL, updated_at = NOW()
+            WHERE id = %s
+            """,
+            (new_attempts, job_id),
+        )
+        results["sent"] += 1
+        return
+
+    if new_attempts >= MAX_ATTEMPTS:
+        cur.execute(
+            """
+            UPDATE notification_jobs
+            SET status = 'failed', attempts = %s, last_error = %s, updated_at = NOW()
+            WHERE id = %s
+            """,
+            (new_attempts, outcome.get("detail"), job_id),
+        )
+        results["exhausted"] += 1
+        return
+
+    delay = BACKOFF_SECONDS[new_attempts - 1]
+    next_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
+    cur.execute(
+        """
+        UPDATE notification_jobs
+        SET status = 'pending', attempts = %s, last_error = %s,
+            next_attempt_at = %s, updated_at = NOW()
+        WHERE id = %s
+        """,
+        (new_attempts, outcome.get("detail"), next_at, job_id),
+    )
+    results["retry_scheduled"] += 1
+
+
 def _load_snapshot(cur, snapshot_id: int) -> dict:
     cur.execute(
         """
@@ -196,6 +248,8 @@ def _load_snapshot(cur, snapshot_id: int) -> dict:
 
 
 def dispatch_pending(sender: TelegramSender | None = None, limit: int = 20) -> dict:
+
+
     if sender is None:
         sender = create_sender()
     ensure_hourly_notification_schema()
@@ -235,40 +289,13 @@ def dispatch_pending(sender: TelegramSender | None = None, limit: int = 20) -> d
             # the chat identifier stored alongside it.
             outcome = sender.send(job["identifier"], text)
             new_attempts = job["attempts"] + 1
-
-            if outcome.get("ok"):
-                cur.execute(
-                    """
-                    UPDATE notification_jobs
-                    SET status = 'sent', attempts = %s, last_error = NULL, updated_at = NOW()
-                    WHERE id = %s
-                    """,
-                    (new_attempts, job["id"]),
-                )
-                results["sent"] += 1
-            elif new_attempts >= MAX_ATTEMPTS:
-                cur.execute(
-                    """
-                    UPDATE notification_jobs
-                    SET status = 'failed', attempts = %s, last_error = %s, updated_at = NOW()
-                    WHERE id = %s
-                    """,
-                    (new_attempts, outcome.get("detail"), job["id"]),
-                )
-                results["exhausted"] += 1
-            else:
-                delay = BACKOFF_SECONDS[new_attempts - 1]
-                next_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
-                cur.execute(
-                    """
-                    UPDATE notification_jobs
-                    SET status = 'pending', attempts = %s, last_error = %s,
-                        next_attempt_at = %s, updated_at = NOW()
-                    WHERE id = %s
-                    """,
-                    (new_attempts, outcome.get("detail"), next_at, job["id"]),
-                )
-                results["retry_scheduled"] += 1
+            _finish_job(
+                cur,
+                job["id"],
+                new_attempts,
+                outcome,
+                results,
+            )
 
         conn.commit()
         return results

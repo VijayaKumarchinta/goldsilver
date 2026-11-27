@@ -6,17 +6,11 @@ them in PostgreSQL, and pushes them to the dashboard over Socket.IO. Telegram
 sends a 30-minute delivery of the same data to configured groups, and the
 dashboard shows live charts plus delivery logs.
 
-The service is a single Flask + Flask-SocketIO process. It serves the built
-frontend SPA, exposes REST APIs, and runs two APScheduler jobs: a 5-minute
-chart snapshot (history only) and the 30-minute Telegram update. There is no
-browser-side polling for live prices; the chart and feed health are refetched
-every 5 minutes.
-
 ---
 
 ## Stack
 
-- **Backend:** Python 3.14, Flask, Flask-SocketIO, Flask-CORS, APScheduler,
+- **Backend:** Python 3.14, Flask-SocketIO, Flask-CORS, APScheduler,
   SQLAlchemy-less PostgreSQL access via `psycopg2`, `requests`.
 - **Database:** PostgreSQL (`goldbot` schema) for snapshots, metal prices,
   FX rates, destinations and delivery logs. The app uses exactly one database,

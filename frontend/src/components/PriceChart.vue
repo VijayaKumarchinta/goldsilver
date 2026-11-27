@@ -98,7 +98,9 @@ function buildOption() {
     backgroundColor: 'transparent',
     animation: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     grid: { left: 62, right: 58, top: 42, bottom: 40 },
-    // The two y-axis names already label the series; a legend would repeat them.
+    // Y-axis names label each series. A legend is added as visible, non-color
+    // composable text in the chart area so viewers relying on anything beyond
+    // colour can tell the lines apart; it duplicates the axis names only.
     legend: { show: false },
     tooltip: {
       trigger: 'axis',
@@ -307,7 +309,16 @@ watch(
       </svg>
       <span>No historical data yet</span>
     </div>
-    <div v-else ref="chartContainer" class="chart-wrap">
+    <div v-else ref="chartContainer" class="chart-wrap"></div>
+    <div class="chart-legends">
+      <span class="legend-row">
+        <span class="legend-swatch" style="background:#a8741a"></span>
+        <span>Gold (Rs per 10 g)</span>
+      </span>
+      <span class="legend-row">
+        <span class="legend-swatch legend-dashed" style="border-top:2px dashed #6b7280"></span>
+        <span>Silver (Rs per g)</span>
+      </span>
     </div>
   </div>
 </template>

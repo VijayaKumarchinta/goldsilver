@@ -63,7 +63,7 @@ const feedAlert = computed(() => {
     : 'since the backend started'
   return `Live price feed unavailable ${since}. Showing the last saved prices; Telegram updates are paused until it recovers.`
 })
-// Announced only when the feed state changes, never on the 5-second poll.
+
 const feedAnnouncement = ref('')
 let lastFeedState = null
 watch(
@@ -134,6 +134,24 @@ function changeLabel(quote) {
   return `${change > 0 ? '+' : ''}${change.toFixed(2)}% since the first reading today`
 }
 
+const deliveryAnnouncement = computed(() => {
+  const statusMap = { failed: 'failed', sending: 'sending', pending: 'pending', sent: 'sent' }
+  const status = logsData.value?.last_periodic_status
+  if (!status) return ''
+  const label = statusMap[status] || status
+  const countMap = { pending: 'pending', sending: 'sending', failed: 'failed' }
+  const pendingCount = (logsData.value?.logs || []).filter((log) => countMap[log.status]).length
+  if (pendingCount) return `Delivery has ${pendingCount} ${pendingCount === 1 ? 'job' : 'jobs'} ${pendingCount === 1 ? 'pending' : 'pending'}`
+  return `Delivery status: ${label}`
+})
+
+const dataAnnouncement = computed(() => {
+  if (loading.value && !prices.value) return 'Loading chart data'
+  if (error.value) return 'Data could not be loaded'
+  if (chart.value?.labels?.length && logsData.value?.logs?.length) return 'Data loaded'
+  return ''
+})
+
 const chartSummary = computed(() => {
   if (!chartRows.value.length) {
     return `No saved gold or silver observations are available for the selected ${chartRange.value} range.`
@@ -178,6 +196,8 @@ function onRangeChange(range) {
       <div v-if="error" class="dashboard-alert" role="alert">{{ error }}</div>
       <button type="button" class="retry-btn" @click="retryLoad()" :disabled="error === null">Retry load</button>
       <p class="sr-only" aria-live="polite" aria-atomic="true">{{ feedAnnouncement }}</p>
+      <p class="sr-only" aria-live="polite" aria-atomic="true">{{ deliveryAnnouncement }}</p>
+      <p class="sr-only" aria-live="polite" aria-atomic="true">{{ dataAnnouncement }}</p>
       <div v-if="feedAlert" class="dashboard-alert feed-alert" role="status">{{ feedAlert }}</div>
       <div v-if="!prices && loading" class="dashboard-empty" role="status">
         Connecting to the backend...
@@ -286,6 +306,7 @@ function onRangeChange(range) {
 
           <details v-if="chartRows.length" class="chart-data">
             <summary>View these readings as a table</summary>
+            <span class="sr-only">Keyboard shortcut: <kbd>Tab</kbd> to move to the data table</span>
             <div class="chart-data-scroll" role="region" aria-label="Historical gold and silver prices" tabindex="0">
               <table>
                 <caption class="sr-only">Saved gold and silver prices for the selected chart range</caption>
@@ -565,8 +586,14 @@ function onRangeChange(range) {
 .history-empty strong { color: var(--ink-2); font-size: 13px; }
 .history-empty span { max-width: 380px; font-size: 12px; }
 
+.chart-legends { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 8px 0; color: var(--mute); font-size: 11px; }
+.legend-row { display: inline-flex; align-items: center; gap: 6px; }
+.legend-swatch { width: 13px; height: 3px; border-radius: 2px; }
+.legend-dashed { border-top-style: dashed; }
+
 .chart-data { margin: 0 17px 15px; color: var(--ink-2); font-size: 11px; }
 .chart-data summary { padding: 8px 0; cursor: pointer; font-weight: 650; }
+.chart-data .sr-only { padding: 6px 0; }
 .chart-data-scroll { max-height: 280px; overflow: auto; }
 .chart-data table { width: 100%; }
 
