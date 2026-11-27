@@ -132,7 +132,10 @@ def test_provider_chain_names_the_source_that_failed(monkeypatch, caplog):
 
 
 def test_only_the_working_provider_is_registered():
-    assert [module.__name__ for module in PROVIDERS] == ["app.providers.metals_tradingview"]
+    assert [module.__name__ for module in PROVIDERS] == [
+        "app.providers.metals_tradingview",
+        "app.providers.forex_black",
+    ]
 
 
 def test_live_quote_rejects_a_quote_without_a_comex_reference(monkeypatch):

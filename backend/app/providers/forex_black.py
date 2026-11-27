@@ -1,4 +1,4 @@
-"""Spot FX + COMEX gold/silver provider with no key.
+"""COMEX spot FX + gold/silver provider with no key.
 
 Source: https://xaus.com (free, keyless, unlimited JSON API)
 
@@ -9,22 +9,29 @@ incident window to a single request and drops back to the last good quote
 afterward so the dashboard never goes to saved prices on a one-off throttling
 blip.
 
-Returned quote shape (same contract as metals_tradingview.py):
+Returned quote shape (same envelope as metals_tradingview.py, but not the same
+price contract):
 
     {
-        "gold":   {"price": <MCX gold, INR per 10 g>},
-        "silver": {"price": <MCX silver, INR per kg>},
+        "gold":   {"price": <COMEX gold, USD per oz>},
+        "silver": {"price": <COMEX silver, USD per oz>},
         "fx":     <USD/INR>,
         "spot":   {"XAU": <gold USD/oz>, "XAG": <silver USD/oz>},
         "provider": "Xaus",
         "fetched_at": <aware datetime>,
         "cached":   <bool>,
     }
+
+Note this is a spot/FX source, not an MCX futures source. ``gold.price`` and
+``silver.price`` are USD per troy ounce, not INR per 10 g / INR per kg. That
+means ``app.providers`` can list this module in PROVIDERS and
+``market_data._live_quote`` can try it, but the existing INR/spot ratio gate
+will reject its payload until a spot-aware enrichment path is wired on top of
+it.
 """
 
 import logging
 from datetime import datetime, timezone
-from threading import Lock
 from time import monotonic
 
 import requests
@@ -115,6 +122,8 @@ def parse_spot(payload: dict) -> dict:
             f"silver={xag_usd!r}, fx={fx!r}"
         )
 
+    # Return COMEX spot in USD/oz and the FX reference. The INR MCX prices are
+    # not provided by this source and are not derived here.
     return {
         "gold": {"price": xau_usd},
         "silver": {"price": xag_usd},
@@ -124,7 +133,12 @@ def parse_spot(payload: dict) -> dict:
 
 
 def fetch_mcx() -> dict | None:
-    """Return one quote, or ``None`` while the endpoint is unusable."""
+    """Return one live spot/FX reading, or ``None`` while the endpoint is unusable.
+
+    ``market_data._live_quote`` will try this provider if it is listed in
+    PROVIDERS, but it will reject the returned quote through the INR/spot ratio
+    gate because this source does not return INR MCX prices.
+    """
     now = monotonic()
     if _cache["t"] is not None and now - _cache["t"] < CACHE_SECONDS:
         # Serve the last good quote while the cache is still valid so the
@@ -158,7 +172,5 @@ if __name__ == "__main__":
     if not quote:
         raise SystemExit("Xaus spot feed unavailable")
     print(f"FX/INR      {quote['fx']:.4f}")
-    print(f"GOLD        {quote['gold']['price']:,.2f} per 10 g")
-    print(f"SILVER      {quote['silver']['price']:,.2f} per kg")
     print(f"COMEX gold  {quote['spot']['XAU']:,.2f} USD/oz")
     print(f"COMEX silver {quote['spot']['XAG']:,.2f} USD/oz")
