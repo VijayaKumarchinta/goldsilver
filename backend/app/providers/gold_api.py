@@ -97,8 +97,20 @@ def _request_quote() -> dict:
     silver = _get_price("XAG", "INR")
 
     # raw prices are per troy ounce
-    gold_per_10g = gold["price"] / _ounce / 10.0
-    silver_per_kg = silver["price"] / _ounce * 1000.0
+    # gold.price is per troy ounce in INR. Troy ounce = 31.1035 g, so price
+    # per 10 g is price x 10 / ounce. (Silver is priced per kg: price x 1000
+    # / ounce. The gold conversion here was once written backwards as /
+    # ounce / 10, which multiplied the per-gram result by 10 x 10 and pushed
+    # the displayed gold 100x too low.)
+
+    # raw prices are per troy ounce
+    # gold.price is per troy ounce in INR. Troy ounce = 31.1035 g, so the
+    # price per 10 g is price x 10 / ounce. Silver is priced per kg:
+    # price x 1000 / ounce. The gold conversion is price x 10 / ounce,
+    # NOT price / ounce / 10 (the latter multiplies the per-gram result
+    # by 10 x 10 and pushes the displayed gold 100x too low).
+    gold_per_10g = gold["price"] * 10 / _ounce
+    silver_per_kg = silver["price"] * 1000 / _ounce
 
     # USD/oz spot (what this app's COMEX reference and the Telegram message
     # display) = INR/oz / USD/INR.
