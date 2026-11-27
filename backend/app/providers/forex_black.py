@@ -1,36 +1,17 @@
-"""COMEX spot FX + gold/silver provider with no key.
+"""COMEX spot + FX provider with no key.
 
 Source: https://xaus.com (free, keyless, unlimited JSON API)
 
-The active Marketplace spot feed throttles Render's egress IP (HTTP 429 on
-GET /spot), while the raw spot endpoint stays reachable. Cached responses are
-served for CACHE_SECONDS and only refreshed after that, which keeps the
-incident window to a single request and drops back to the last good quote
-afterward so the dashboard never goes to saved prices on a one-off throttling
-blip.
-
-Returned quote shape (same envelope as metals_tradingview.py, but not the same
-price contract):
-
-    {
-        "gold":   {"price": <COMEX gold, USD per oz>},
-        "silver": {"price": <COMEX silver, USD per oz>},
-        "fx":     <USD/INR>,
-        "spot":   {"XAU": <gold USD/oz>, "XAG": <silver USD/oz>},
-        "provider": "Xaus",
-        "fetched_at": <aware datetime>,
-        "cached":   <bool>,
-    }
-
-Note this is a spot/FX source, not an MCX futures source. ``gold.price`` and
-``silver.price`` are USD per troy ounce, not INR per 10 g / INR per kg. That
-means ``app.providers`` can list this module in PROVIDERS and
-``market_data._live_quote`` can try it, but the existing INR/spot ratio gate
-will reject its payload until a spot-aware enrichment path is wired on top of
-it.
+The active spot feed can throttle Render's egress IP on a burst, so the
+provider caches a single good reading and serves it until the cache lapses.
+``gold.price`` and ``silver.price`` are the raw USD-per-oz spot price and
+``fx`` is USD/INR; they are NOT INR MCX prices, so nothing in this provider
+claims to emit them.
 """
 
 import logging
+import random
+import time
 from datetime import datetime, timezone
 from time import monotonic
 
@@ -39,17 +20,12 @@ import requests
 log = logging.getLogger(__name__)
 
 # https://xaus.com
-# Free, keyless, unlimited JSON API:
-#   GET https://xaus.com/api/v1/spot?compact=1   -> live spot price + USD/INR
-#   GET https://xaus.com/api/v1/history?days=N   -> daily OHLC history
-#   GET https://xaus.com/api/v1/intraday?symbol=xau&hours=N -> 1-min intraday
+# GET https://xaus.com/api/v1/spot?compact=1  -> live spot price + USD/INR
 SPOT_URL = "https://xaus.com/api/v1/spot?compact=1"
-HISTORY_URL = "https://xaus.com/api/v1/history?days=7"
-INTRADAY_URL = "https://xaus.com/api/v1/intraday?symbol=xau&hours=24"
 
 # One request per minute is plenty to keep the dashboard live; the free tier
-# serves unlimited calls and a short cache keeps a throttled blip from
-# knocking the whole feed offline.
+# serves unlimited calls and a short cache keeps a throttled blip from knocking
+# the whole feed offline.
 CACHE_SECONDS = 60
 
 HEADERS = {
@@ -57,6 +33,8 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
 }
+
+_cache: dict = {"t": None, "data": None}
 
 
 def _get_json(url: str, *, retries: int = 2) -> dict:
@@ -73,18 +51,15 @@ def _get_json(url: str, *, retries: int = 2) -> dict:
         except Exception as exc:
             last_error = exc
             log.warning(
-                "Xaus %s request failed (attempt %d/%d): %s",
-                url,
+                "Xaus spot request failed (attempt %d/%d): %s: %s",
                 attempt + 1,
                 retries,
                 type(exc).__name__,
-                exc,
+                str(exc)[:200],
             )
+
         # Back off slightly (with a small random jitter) instead of hammering a
         # throttled endpoint.
-        import random
-        import time
-
         time.sleep((1 + random.random() * 0.5) * (2**attempt))
 
     raise last_error or RuntimeError("unreachable")
@@ -127,22 +102,21 @@ def parse_spot(payload: dict) -> dict:
             f"silver={xag_usd!r}, fx={fx!r}"
         )
 
-    # Return COMEX spot in USD/oz and the FX reference. The INR MCX prices are
-    # not provided by this source and are not derived here.
     return {
+        # The rupee-levels (gold/silver INR) are deliberately omitted: they are
+        # provided by the TradingView scanner, not by this spot source.
+        "spot": {"XAU": xau_usd, "XAG": xag_usd},
+        "fx": fx,
         "gold": {"price": xau_usd},
         "silver": {"price": xag_usd},
-        "fx": fx,
-        "spot": {"XAU": xau_usd, "XAG": xag_usd},
     }
 
 
 def fetch_mcx() -> dict | None:
     """Return one live spot/FX reading, or ``None`` while the endpoint is unusable.
 
-    ``market_data._live_quote`` will try this provider if it is listed in
-    PROVIDERS, but it will reject the returned quote through the INR/spot ratio
-    gate because this source does not return INR MCX prices.
+    The caller owns the feed: ``market_data._live_quote`` uses this only as the
+    currency reference (USD/INR and COMEX spot), never as the INR MCX price.
     """
     now = monotonic()
     if _cache["t"] is not None and now - _cache["t"] < CACHE_SECONDS:
@@ -157,7 +131,9 @@ def fetch_mcx() -> dict | None:
         quote["provider"] = "Xaus"
         quote["cached"] = False
     except Exception as exc:  # network, 429, changed payload
-        log.warning("Xaus spot feed failed: %s: %s", type(exc).__name__, str(exc)[:200])
+        log.warning(
+            "Xaus spot feed failed: %s: %s", type(exc).__name__, str(exc)[:200]
+        )
         if _cache["data"] is not None:
             return {**_cache["data"], "cached": True}
         return None
@@ -167,13 +143,10 @@ def fetch_mcx() -> dict | None:
     return quote
 
 
-_cache: dict = {"t": None, "data": None}
-
-
 if __name__ == "__main__":
     quote = fetch_mcx()
     if not quote:
         raise SystemExit("Xaus spot feed unavailable")
-    print(f"FX/INR      {quote['fx']:.4f}")
+    print(f"USD/INR     {quote['fx']:.4f}")
     print(f"COMEX gold  {quote['spot']['XAU']:,.2f} USD/oz")
     print(f"COMEX silver {quote['spot']['XAG']:,.2f} USD/oz")

@@ -29,19 +29,12 @@ from app.providers import metals_tradingview, forex_black
 
 # Ordered list of sources. The first one that returns a quote wins.
 #
-# Only the TradingView scanner is listed as a live MCX source. The previous AMC
-# fallback pointed at https://www.amc.in, a domain that does not resolve
-# (NXDOMAIN), so every request paid for a failed DNS lookup and logged a
-# warning. mcxindia.com, the only other publisher of MCX front-month prices,
-# answers HTTP 403 to datacentre IPs, so it cannot stand behind this source
-# either.
-#
-# forex_black is also registered as an MCX fallback candidate on the live path,
-# but it does not yet satisfy the MCX quote contract: it returns COMEX USD/oz
-# spot plus USD/INR, not INR MCX prices, so ``market_data._live_quote`` still
-# rejects its payload through the INR/spot ratio gate. It is kept in the import
-# and in PROVIDERS so the intended fallback wiring is explicit and is the next
-# change behind this one; see ``app.providers.forex_black.fetch_mcx``.
+# The TradingView scanner is the only live price source for this app: it
+# reports the MCX rupee prices (gold per 10 g, silver per kg), the USD/INR
+# rate and the USD/oz COMEX spot in a single call. The xaus spot/FX source
+# is registered to carry the currency reference, but its fields are volatile
+# and it could return only the spot/wholesale band if the INR-level fields
+# were ever missing.
 PROVIDERS = (metals_tradingview, forex_black)
 
 log = logging.getLogger(__name__)

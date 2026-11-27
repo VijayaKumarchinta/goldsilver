@@ -113,9 +113,10 @@ _FAMILY_SQL = {
 
 
 def _live_quote() -> dict | None:
-    # The provider chain already keeps the last good quote through a brief
-    # scanner outage. Only when no source can produce a usable quote do we fall
-    # back to the last saved snapshot.
+    # TradingView is the only live MCX source: it returns the rupee prices and
+    # the currency/DEX references in one call. Nothing else on this list emits
+    # a INR MCX quote, so when the scanner eventually returns we have the full
+    # feed and no further enrichment is required.
     quote = fetch_mcx_provider()
     if not quote:
         return None
@@ -140,12 +141,10 @@ def _live_quote() -> dict | None:
             return None
         spot_gram = Decimal(str(spot_price)) * fx / ounce
         ratio = gram / spot_gram
-        # Keep the comparison as a diagnostic only. The scanner and the COMEX
-        # reference can legitimately drift by more than the old 0.95-1.6 band
-        # (export/import flows, spot-futures lag, a stale USD/INR), and a hard
-        # rejection turned a one-off mismatch into "live MCX market data
-        # unavailable" for the whole scheduler loop. A wider band keeps the
-        # dashboard live while still logging the divergence for triage.
+        # Keep the comparison as a diagnostic only. If the live scanner ever
+        # begins to report a misaligned quote, the ratio moves and the log
+        # surfaces it so the mismatch can be triaged. The dashboard stays up
+        # either way.
         if not (Decimal("0.6") <= ratio <= Decimal("2.5")):
             log.warning(
                 "MCX %s price diverges %.2fx from the converted spot price (flagging, not rejecting)",

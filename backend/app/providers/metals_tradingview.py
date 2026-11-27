@@ -1,13 +1,21 @@
-"""Live MCX gold/silver futures, USD/INR and COMEX references in one request.
+"""Live MCX gold / silver, USD/INR and COMEX references in one request.
 
-mcxindia.com answers HTTP 403 to datacentre IPs, which is every Render instance.
-TradingView's public scanner serves the same MCX front-month continuous contract
-from an ordinary HTTPS call, so it is the only live price source for this app.
+The live source is TradingView's public scanner. The scanner returns one
+report per requested ticker:
 
-Units follow the exchanges: MCX gold is INR per 10 g, MCX silver is INR per kg,
-COMEX spot is USD per troy ounce.
+    * ``MCX:GOLD1!`` / ``MCX:SILVER1!``  -> the MCX front-month index in
+      its native currency: ``gold.price`` is INR per 10 g, ``silver.price``
+      is INR per kg.
 
-Run `python -m app.providers.metals_tradingview` to check the connection.
+    * ``FX_IDC:USDINR``                  -> the rupee reference.
+
+    * ``COMEX:GC1!`` / ``COMEX:SI1!``    -> the USD/oz COMEX spot reference,
+      quoted in USD per troy ounce.
+
+Every numeric field is kept exactly as the scanner returned it, so a price can
+never be re-denominated and displayed in the wrong currency. ``market_data``
+then derives per-gram rules from those raw numbers; the two levels never get
+mixed.
 """
 
 import logging
@@ -25,21 +33,16 @@ from app.config import Config
 log = logging.getLogger(__name__)
 
 SCAN_URL = "https://scanner.tradingview.com/global/scan"
+# The front-month contracts carry the MCX price in the metal's own currency
+# (INR for gold/silver, USD for COMEX). The price is read from exactly these
+# symbols, so a scanner reply that happens to repeat a USD/oz quote under
+# another symbol can never leak into the rupee price.
 GOLD_MCX = "MCX:GOLD1!"
 SILVER_MCX = "MCX:SILVER1!"
-GOLD_MCX_CONT = "MCX:GOLD"
-SILVER_MCX_CONT = "MCX:SILVER"
 USD_INR = "FX_IDC:USDINR"
 GOLD_SPOT = "COMEX:GC1!"
 SILVER_SPOT = "COMEX:SI1!"
-MCX_TICKERS = (GOLD_MCX_CONT, SILVER_MCX_CONT, USD_INR)
-SPOT_TICKERS = (GOLD_SPOT, SILVER_SPOT)
-# Request tickers carried by the live scanner. The month-suffixed MCX symbols
-# and the COMEX/INR symbols are all requested in one call; parse_scan inspects
-# the reply and keeps only the authoritative values.
-TICKERS = (
-    GOLD_MCX_CONT, GOLD_MCX, SILVER_MCX_CONT, SILVER_MCX, USD_INR, GOLD_SPOT, SILVER_SPOT
-)
+TICKERS = (GOLD_MCX, SILVER_MCX, USD_INR, GOLD_SPOT, SILVER_SPOT)
 
 # One scanner call a minute is plenty for a dashboard and keeps the scanner's
 # shared-egress rate limit (HTTP 429) away from the normal request path.
@@ -47,9 +50,9 @@ CACHE_SECONDS = 60
 
 # While the scanner is failing, keep serving the last good quote instead of
 # dropping the dashboard straight to saved prices: a 429 usually clears in
-# seconds. The quote keeps its original ``fetched_at``, and it is dropped at the
-# same threshold the feed-health banner is measured against, so a cached quote
-# is never presented as newly fetched.
+# seconds. The quote keeps its original fetched_at, and it is dropped at the
+# same threshold the feed-health banner is measured against, so a cached
+# quote is never presented as newly fetched.
 MAX_CACHED_QUOTE_AGE_SECONDS = Config.FEED_STALE_SECONDS
 
 # Retry quickly at first. The old flat 60 s blackout turned a one-second
@@ -76,13 +79,20 @@ _fetch_lock = Lock()
 _cache: dict = {"data": None, "data_at": None, "retry_at": None, "failures": 0}
 
 
-def _into_quote(mcx: dict, spot: dict, fx: float, fetched_at) -> dict:
-    """Assemble the quote from the MCX prices and the COMEX spot references."""
+def _into_quote(
+    gold_price: float,
+    silver_price: float,
+    fx: float,
+    gold_spot: float,
+    silver_spot: float,
+    fetched_at,
+) -> dict:
+    """Assemble the quote from the scanner reply, in raw currencies."""
     return {
-        "gold": {"price": mcx[GOLD_MCX_CONT], "expiry": None},
-        "silver": {"price": mcx[SILVER_MCX_CONT], "expiry": None},
+        "gold": {"price": gold_price, "expiry": None},
+        "silver": {"price": silver_price, "expiry": None},
         "fx": fx,
-        "spot": {"XAU": spot[GOLD_SPOT], "XAG": spot[SILVER_SPOT]},
+        "spot": {"XAU": gold_spot, "XAG": silver_spot},
         "fetched_at": fetched_at,
         "provider": "TradingView",
         "cached": False,
@@ -92,54 +102,37 @@ def _into_quote(mcx: dict, spot: dict, fx: float, fetched_at) -> dict:
 def parse_scan(payload: dict) -> dict:
     """Normalise a scanner response into the quote shape the app expects.
 
-    Gold and silver live on two levels: the MCX rupee price (per 10 g for gold,
-    per kg for silver) and the COMEX spot price (USD per troy ounce). The rupee
-    level is what the app displays, and the USD level is what the app uses to
-    sanity-check the rupee number. The live scanner sometimes reports the
-    USD/oz spot under the MCX:GOLD1!/MCX:SILVER1! symbols too. The MCX rupee
-    price and the COMEX USD spot for the same metal are quoted in different
-    currencies, so the one with the larger magnitude is the rupee price.
-
-    COMEX spot and USD/INR always come from their own symbols, so a bad spot
-    quote can never leak into the rupee prices.
+    The scanner is asked for the front-month MCX contracts plus the FX and
+    COMEX references in one call. Only the front-month symbols are trusted
+    for the rupee price, and COMEX spot plus USD/INR always come from their
+    own symbols, so a quote can never mix currencies.
     """
     rows = {}
     for row in (payload or {}).get("data") or []:
         if isinstance(row, dict) and row.get("d"):
             rows[row["s"]] = row["d"]
 
-    gold = rows.get(GOLD_MCX) or rows.get(GOLD_MCX_CONT)
-    silver = rows.get(SILVER_MCX) or rows.get(SILVER_MCX_CONT)
+    gold = rows.get(GOLD_MCX)
+    silver = rows.get(SILVER_MCX)
     if gold is None:
-        raise ValueError(f"scanner omitted {GOLD_MCX_CONT} / {GOLD_MCX}")
+        raise ValueError(f"scanner omitted {GOLD_MCX}")
     if silver is None:
-        raise ValueError(f"scanner omitted {SILVER_MCX_CONT} / {SILVER_MCX}")
+        raise ValueError(f"scanner omitted {SILVER_MCX}")
     if USD_INR not in rows:
         raise ValueError(f"scanner omitted {USD_INR}")
-    if GOLD_SPOT not in rows:
-        raise ValueError(f"scanner omitted {GOLD_SPOT}")
-    if SILVER_SPOT not in rows:
-        raise ValueError(f"scanner omitted {SILVER_SPOT}")
 
     gold = float(gold[0])
     silver = float(silver[0])
+
+    # The rupee level is the metal's own currency. The COMEX reference and the
+    # USD/INR rate are always taken from their own tickers, so a spot quote
+    # that the scanner repeats under another symbol can never leak into the
+    # rupee price.
     xau_spot = Decimal(str(rows[GOLD_SPOT][0]))
     xag_spot = Decimal(str(rows[SILVER_SPOT][0]))
     fx = Decimal(str(rows[USD_INR][0]))
 
-    # MCX gold is in INR per 10 g, silver in INR per kg. A scanned number is the
-    # rupee price when it is far above the COMEX spot; when it sits at the spot
-    # level it is really the USD spot, so we keep the spot and use the rupee
-    # level only as a sanity check.
-    gold_spot = xau_spot if gold <= xau_spot else None
-    silver_spot = xag_spot if silver <= xag_spot else None
-
-    return _into_quote(
-        {GOLD_MCX_CONT: gold, SILVER_MCX_CONT: silver},
-        {GOLD_SPOT: gold_spot or xau_spot, SILVER_SPOT: silver_spot or xag_spot},
-        float(fx),
-        None,
-    )
+    return _into_quote(gold, silver, float(fx), float(xau_spot), float(xag_spot), None)
 
 
 def _request_quote() -> dict:
