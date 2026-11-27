@@ -2,7 +2,7 @@
 
 mcxindia.com answers HTTP 403 to datacentre IPs, which is every Render instance.
 TradingView's public scanner serves the same MCX front-month continuous contract
-from an ordinary HTTPS call, so it is the single price source for this app.
+from an ordinary HTTPS call, so it is the only live price source for this app.
 
 Units follow the exchanges: MCX gold is INR per 10 g, MCX silver is INR per kg,
 COMEX spot is USD per troy ounce.
@@ -11,12 +11,15 @@ Run `python -m app.providers.metals_tradingview` to check the connection.
 """
 
 import logging
+import random
 from datetime import datetime, timezone
 from math import isfinite
 from threading import Lock
 from time import monotonic
 
 import requests
+
+from app.config import Config
 
 log = logging.getLogger(__name__)
 
@@ -28,10 +31,22 @@ GOLD_SPOT = "COMEX:GC1!"
 SILVER_SPOT = "COMEX:SI1!"
 TICKERS = (GOLD_MCX, SILVER_MCX, USD_INR, GOLD_SPOT, SILVER_SPOT)
 
-CACHE_SECONDS = 15
-# Short enough that Telegram updates recover quickly, long enough to stop a
-# failing endpoint from being hit on every dashboard poll.
-FAILURE_BACKOFF_SECONDS = 60
+# One scanner call a minute is plenty for a dashboard and keeps the scanner's
+# shared-egress rate limit (HTTP 429) away from the normal request path.
+CACHE_SECONDS = 60
+
+# While the scanner is failing, keep serving the last good quote instead of
+# dropping the dashboard straight to saved prices: a 429 usually clears in
+# seconds. The quote keeps its original ``fetched_at``, and it is dropped at the
+# same threshold the feed-health banner is measured against, so a cached quote
+# is never presented as newly fetched.
+MAX_CACHED_QUOTE_AGE_SECONDS = Config.FEED_STALE_SECONDS
+
+# Retry quickly at first. The old flat 60 s blackout turned a one-second
+# handshake failure into a full minute of saved prices.
+RETRY_BASE_SECONDS = 10
+RETRY_MAX_SECONDS = 60
+RETRY_JITTER = 0.2
 
 HEADERS = {
     "Accept": "application/json",
@@ -44,8 +59,11 @@ HEADERS = {
     ),
 }
 
-_lock = Lock()
-_cache: dict = {"t": None, "data": None, "retry_at": None}
+_state_lock = Lock()
+# Guards "one scanner call in flight"; acquired without blocking so dashboard
+# requests never queue behind another request's HTTP timeout.
+_fetch_lock = Lock()
+_cache: dict = {"data": None, "data_at": None, "retry_at": None, "failures": 0}
 
 
 def parse_scan(payload: dict) -> dict:
@@ -76,43 +94,84 @@ def parse_scan(payload: dict) -> dict:
     }
 
 
+def _request_quote() -> dict:
+    """One scanner request. Raises on any failure so the caller owns backoff."""
+    response = requests.post(
+        SCAN_URL,
+        headers=HEADERS,
+        json={
+            "symbols": {"tickers": list(TICKERS), "query": {"types": []}},
+            "columns": ["close"],
+        },
+        timeout=15,
+    )
+    response.raise_for_status()
+    quote = parse_scan(response.json())
+    quote["fetched_at"] = datetime.now(timezone.utc)
+    quote["provider"] = "TradingView"
+    quote["cached"] = False
+    return quote
+
+
+def _cached_quote_locked(now: float) -> dict | None:
+    """Last good quote, marked cached, while it is still worth serving.
+
+    Caller must hold ``_state_lock``.
+    """
+    data = _cache["data"]
+    data_at = _cache["data_at"]
+    if data is None or data_at is None:
+        return None
+    if now - data_at > MAX_CACHED_QUOTE_AGE_SECONDS:
+        return None
+    return {**data, "cached": True}
+
+
+def _retry_delay(failures: int) -> float:
+    """Exponential backoff with jitter, capped so recovery is never slow."""
+    delay = min(RETRY_BASE_SECONDS * 2 ** max(failures - 1, 0), RETRY_MAX_SECONDS)
+    return delay * (1 + random.uniform(-RETRY_JITTER, RETRY_JITTER))
+
+
 def fetch_mcx() -> dict | None:
-    """Latest quote, or None while the endpoint is unavailable."""
-    with _lock:
+    """Latest quote, a still-usable cached one, or ``None`` when none is usable.
+
+    A ``cached`` quote keeps the provider's original ``fetched_at`` so callers
+    can show the real reading time instead of the retry time.
+    """
+    with _state_lock:
         now = monotonic()
-        if _cache["t"] is not None and now - _cache["t"] < CACHE_SECONDS:
+        data_at = _cache["data_at"]
+        if _cache["data"] is not None and data_at is not None and now - data_at < CACHE_SECONDS:
             return _cache["data"]
         if _cache["retry_at"] is not None and now < _cache["retry_at"]:
-            return None
-        _cache["t"] = now
+            return _cached_quote_locked(now)
+        if not _fetch_lock.acquire(blocking=False):
+            return _cached_quote_locked(now)
 
-        try:
-            response = requests.post(
-                SCAN_URL,
-                headers=HEADERS,
-                json={
-                    "symbols": {"tickers": list(TICKERS), "query": {"types": []}},
-                    "columns": ["close"],
-                },
-                timeout=15,
-            )
-            response.raise_for_status()
-            quote = parse_scan(response.json())
-            quote["fetched_at"] = datetime.now(timezone.utc)
-            quote["provider"] = "TradingView"
-            _cache["data"] = quote
-            _cache["retry_at"] = None
-            return quote
-        except Exception as exc:  # network, timeout, changed payload
+    try:
+        quote = _request_quote()
+    except Exception as exc:  # network, timeout, 429, changed payload
+        with _state_lock:
+            _cache["failures"] += 1
+            delay = _retry_delay(_cache["failures"])
+            _cache["retry_at"] = monotonic() + delay
             log.warning(
-                "Market data fetch failed (retrying in %ss): %s: %s",
-                FAILURE_BACKOFF_SECONDS,
+                "TradingView quote failed (retrying in %.0fs): %s: %s",
+                delay,
                 type(exc).__name__,
                 str(exc)[:200],
             )
-            _cache["data"] = None
-            _cache["retry_at"] = now + FAILURE_BACKOFF_SECONDS
-            return None
+            return _cached_quote_locked(monotonic())
+    finally:
+        _fetch_lock.release()
+
+    with _state_lock:
+        _cache["data"] = quote
+        _cache["data_at"] = monotonic()
+        _cache["retry_at"] = None
+        _cache["failures"] = 0
+    return quote
 
 
 if __name__ == "__main__":

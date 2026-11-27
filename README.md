@@ -174,13 +174,15 @@ frontend/
 
 - **Render free tier sleeps after ~15 minutes without traffic.** APScheduler
   stops with the process, so 5-minute chart points are missed while asleep.
-  `.github/workflows/keep-alive.yml` pings `/api/prices/health` every 5 minutes
+  `.github/workflows/keep-alive.yml` pings `/api/health` every 5 minutes
   with retries to keep the instance awake; GitHub's scheduled runs are
   best-effort, so occasional gaps are still possible. A paid always-on instance
   removes this limitation.
-- The live price quote comes from a single source (TradingView scanner). If the
-  endpoint is unreachable, the dashboard falls back to the last saved snapshot
-  and flags the feed stale after `FEED_STALE_SECONDS`.
+- The live price quote comes from a single source (TradingView scanner). A
+  brief scanner failure (for example HTTP 429) keeps serving the last good
+  quote, with its original reading time, for up to `FEED_STALE_SECONDS`; after
+  that the dashboard falls back to the last saved snapshot and flags the feed
+  stale.
 - Telegram delivery is not guaranteed-delivery: each job is retried up to
   `MAX_ATTEMPTS` times with backoff, then marked `failed`.
 - The frontend `dist/` is committed. The backend serves it; without a build the

@@ -46,8 +46,11 @@ def _json_safe(obj):
     return obj
 
 
-def set_price_event(snapshot: dict | None):
+def set_price_event(snapshot: dict | None, fresh: bool = True):
     """Record the newest live market snapshot and notify every Socket.IO client.
+
+    ``fresh`` is False when the snapshot replays a provider's cached quote. It
+    is broadcast either way, but only a real provider fetch moves feed health.
 
     The snapshot is serialised to JSON first so Decimal values (which come
     straight out of PostgreSQL) are converted to float and can be sent over
@@ -57,7 +60,10 @@ def set_price_event(snapshot: dict | None):
         _price_event["last"] = snapshot
         _price_event["last_at"] = datetime.now(timezone.utc)
         global _last_live_at
-        _last_live_at = _price_event["last_at"]
+        # A provider replaying its last good quote must not make the feed look
+        # healthier than it is: feed health is measured from real fetches.
+        if fresh:
+            _last_live_at = _price_event["last_at"]
 
     try:
         from app import socketio as _socketio
@@ -95,17 +101,21 @@ _FAMILY_SQL = {
     # the DB fallback is stamped "db". Match both, plus the legacy "MCX..."
     # prefix, and keep estimate rows separate so a spot-history never leaks
     # into an MCX trace.
-    "mcx": "m.provider ILIKE 'MCX%%' OR m.provider ILIKE '%%MCX GOLD%%' OR m.provider ILIKE '%%MCX SILVER%%' OR m.provider = 'db'",
-    "estimate": "m.provider LIKE '%%(estimate)'",
-    "spot": "m.provider NOT ILIKE 'MCX%%' AND m.provider NOT ILIKE '%%MCX GOLD%%' AND m.provider NOT ILIKE '%%MCX SILVER%%' AND m.provider <> 'db' AND m.provider NOT LIKE '%%(estimate)'",
+    #
+    # Every clause is parenthesised because callers append it after an AND.
+    # Without the parentheses SQL binds the AND to the first OR term only, so
+    # the live '%MCX GOLD%' rows bypassed the caller's time window and 1D, 7D
+    # and 30D all returned the entire history.
+    "mcx": "(m.provider ILIKE 'MCX%%' OR m.provider ILIKE '%%MCX GOLD%%' OR m.provider ILIKE '%%MCX SILVER%%' OR m.provider = 'db')",
+    "estimate": "(m.provider LIKE '%%(estimate)')",
+    "spot": "(m.provider NOT ILIKE 'MCX%%' AND m.provider NOT ILIKE '%%MCX GOLD%%' AND m.provider NOT ILIKE '%%MCX SILVER%%' AND m.provider <> 'db' AND m.provider NOT LIKE '%%(estimate)')",
 }
 
 
 def _live_quote() -> dict | None:
-    # TradingView is the primary source, but a blocked datacentre IP or a
-    # scanner outage must not strand the dashboard on saved prices. Try the
-    # fallback provider under it, and only fall back to the last saved
-    # snapshot once both have failed.
+    # The provider chain already keeps the last good quote through a brief
+    # scanner outage. Only when no source can produce a usable quote do we fall
+    # back to the last saved snapshot.
     quote = fetch_mcx_provider()
     if not quote:
         return None
@@ -118,7 +128,15 @@ def _live_quote() -> dict | None:
         ("XAG", "silver", 1000, "XAG"),
     ):
         gram = Decimal(str(quote[key]["price"])) / per_gram_divisor  # gold per 10 g, silver per kg
-        spot_gram = Decimal(str(quote["spot"][spot_key])) * fx / ounce
+        spot_price = (quote.get("spot") or {}).get(spot_key)
+        if not spot_price or spot_price <= 0:
+            log.warning(
+                "MCX %s quote rejected: the quote carries no COMEX %s reference",
+                key,
+                spot_key,
+            )
+            return None
+        spot_gram = Decimal(str(spot_price)) * fx / ounce
         ratio = gram / spot_gram
         if not (Decimal("0.95") <= ratio <= Decimal("1.6")):
             log.warning(
@@ -132,7 +150,15 @@ def _live_quote() -> dict | None:
             "spot_inr_per_10g": spot_gram * Decimal("10"),
             "usd_per_oz": Decimal(str(quote["spot"][spot_key])),
         }
-    return {"metals": metals, "fx": Decimal(str(quote["fx"]))}
+    return {
+        "metals": metals,
+        "fx": Decimal(str(quote["fx"])),
+        "provider": quote["provider"],
+        # The reading time of the quote itself: a cached quote keeps the time it
+        # was actually fetched, so the dashboard never claims a stale price is new.
+        "fetched_at": quote["fetched_at"],
+        "fresh": not quote.get("cached", False),
+    }
 
 
 def feed_health(now: datetime | None = None) -> dict:
@@ -204,7 +230,7 @@ def get_latest_snapshot() -> dict:
     if live:
         opens = _today_open_per_10g()
         snapshot = {
-            "captured_at": datetime.now(timezone.utc).isoformat(),
+            "captured_at": live["fetched_at"].isoformat(),
             "base_currency": "USD",
             "output_currency": "INR",
             "market_open": _market_open_now(),
@@ -226,10 +252,10 @@ def get_latest_snapshot() -> dict:
             },
             "fx": {
                 "USD_INR": live["fx"],
-                "FX_SOURCE": "TradingView",
+                "FX_SOURCE": live["provider"],
             },
         }
-        set_price_event(snapshot)
+        set_price_event(snapshot, fresh=live["fresh"])
         return snapshot
 
     conn = get_db()

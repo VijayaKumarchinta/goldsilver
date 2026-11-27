@@ -20,7 +20,7 @@ services:
         sync: false
       - key: TELEGRAM_CHAT_ID
         sync: false
-    healthCheckPath: /api/prices/health
+    healthCheckPath: /api/health
     healthCheckTimeout: 600
 
 databases:

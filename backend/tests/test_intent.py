@@ -13,6 +13,7 @@ from flask import Flask
 from app.api import prices as prices_api
 from app.api.health import health_bp
 from app.repositories.history import MAX_POINTS, _downsample
+from app.services.market_data import _FAMILY_SQL
 from app.scheduler import manager
 from app.services import notification_dispatcher as dispatcher
 from app.services.notification_dispatcher import _next_cron_slot
@@ -25,6 +26,14 @@ def test_downsample_keeps_newest_and_respects_cap():
     sampled = _downsample(items, MAX_POINTS["1D"])
     assert len(sampled) <= MAX_POINTS["1D"]
     assert sampled[-1] == items[-1]
+
+
+def test_family_filter_stays_grouped_after_and():
+    # Callers append the family clause after an AND. A bare clause made SQL
+    # bind that AND to the first OR term only, so the live '%MCX GOLD%' rows
+    # ignored the 1D/7D/30D time window and every range returned all history.
+    for family, clause in _FAMILY_SQL.items():
+        assert clause.startswith("(") and clause.endswith(")"), family
 
 
 def test_downsample_is_identity_below_cap():

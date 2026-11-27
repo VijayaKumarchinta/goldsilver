@@ -21,7 +21,7 @@ jobs:
           for attempt in 1 2 3; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
               --max-time 60 --retry 2 --retry-delay 10 \
-              https://goldsilver.onrender.com/api/prices/health)
+              https://goldsilver.onrender.com/api/health)
             echo "Attempt $attempt: Render service responded with $STATUS"
             if [ "$STATUS" = "200" ]; then
               exit 0

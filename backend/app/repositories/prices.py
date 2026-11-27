@@ -39,7 +39,7 @@ def save_snapshot(snapshot: dict, event_type: str) -> int:
             )
 
         usd_inr = snapshot["fx"]["USD_INR"]
-        fx_provider_name = snapshot["fx"].get("FX_SOURCE", "xaus.com")
+        fx_provider_name = snapshot["fx"].get("FX_SOURCE") or snapshot.get("fx_source") or "db"
         cur.execute(
             """
             INSERT INTO fx_rates (snapshot_id, base, quote, rate, provider)
