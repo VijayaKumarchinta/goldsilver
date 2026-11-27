@@ -142,10 +142,9 @@ def test_provider_chain_names_the_source_that_failed(monkeypatch, caplog):
 
 
 def test_only_the_working_provider_is_registered():
-    assert [module.__name__ for module in PROVIDERS] == [
-        "app.providers.metals_tradingview",
-        "app.providers.forex_black",
-    ]
+    assert [module.__name__ for module in PROVIDERS] == ["app.providers.gold_api"]
+    # gold-api.com is the single live feeder: it returns XAU and XAG at the
+    # same time, in INR, with the USD/INR cross-rate.
 
 
 def test_live_quote_rejects_a_quote_without_a_comex_reference(monkeypatch):

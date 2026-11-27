@@ -151,8 +151,12 @@ def _live_quote() -> dict | None:
                 key, ratio,
             )
         metals[symbol] = {
+            # The live feed is global spot converted to INR (gold-api.com
+            # returns the spot price; the old TradingView path reported the
+            # MCX front-month contract). Keep the label honest so the chart
+            # family and any downstream message carry the right source.
             "inr_per_gram": gram,
-            "source": f"{quote['provider']} - MCX {key.upper()} front-month futures",
+            "source": f"{quote['provider']} - spot",
             "updated_at": quote["fetched_at"],
             "spot_inr_per_10g": spot_gram * Decimal("10"),
             "usd_per_oz": Decimal(str(quote["spot"][spot_key])),

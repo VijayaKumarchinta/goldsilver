@@ -1,10 +1,10 @@
-"""Live price providers for MCX gold / silver.
+"""Live gold / silver + USD/INR, single feeder.
 
-Each provider must expose ``fetch_mcx() -> dict | None`` and return one quote::
+A provider must expose ``fetch_mcx() -> dict | None`` and return one quote::
 
     {
-        "gold": {"price": <MCX gold, INR per 10 g>, "expiry": None},
-        "silver": {"price": <MCX silver, INR per kg>, "expiry": None},
+        "gold": {"price": <INR per 10 g>, "expiry": None},
+        "silver": {"price": <INR per kg>, "expiry": None},
         "fx": <USD/INR>,
         "spot": {"XAU": <gold USD/oz>, "XAG": <silver USD/oz>},
         "provider": "<provider id>",
@@ -25,17 +25,15 @@ quote against the converted COMEX reference before it accepts the reading.
 
 import logging
 
-from app.providers import metals_tradingview, forex_black
+# The live feeder. gold-api.com is the only free, keyless endpoint on this
+# machine that returns both XAU and XAG at the same time, in INR, with
+# the USD/INR cross-rate, so a single two-request call replaces the whole
+# multi-provider path. Its fields are the only ones the dashboard consumes;
+# the old scanner and the spot/FX source are no longer part of the live
+# request path.
+from app.providers import gold_api
 
-# Ordered list of sources. The first one that returns a quote wins.
-#
-# The TradingView scanner is the only live price source for this app: it
-# reports the MCX rupee prices (gold per 10 g, silver per kg), the USD/INR
-# rate and the USD/oz COMEX spot in a single call. The xaus spot/FX source
-# is registered to carry the currency reference, but its fields are volatile
-# and it could return only the spot/wholesale band if the INR-level fields
-# were ever missing.
-PROVIDERS = (metals_tradingview, forex_black)
+PROVIDERS = (gold_api,)
 
 log = logging.getLogger(__name__)
 
@@ -45,9 +43,11 @@ __all__ = ["PROVIDERS", "fetch_mcx"]
 def fetch_mcx() -> dict | None:
     """Try every provider in order and return the first usable quote.
 
-    ``market_data._live_quote`` treats the first non-``None`` quote as *the*
-    live feed, so keep the order disciplined: the scanner first, then any
-    future fallback behind it.
+    Under the current configuration the list holds a single entry, so this is
+    a one-step chain: gold-api.com either returns a full gold/silver quote or
+    nothing. The loop is kept so a future provider can be prepended without
+    touching the caller of this function, and so the existing unit tests
+    (which monkeypatch the PROVIDERS list) keep their current behaviour.
     """
     failures = []
     for provider in PROVIDERS:
